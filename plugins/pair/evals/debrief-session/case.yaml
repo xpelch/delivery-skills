@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: debrief-session
+tags: [read-only, debrief]
+context:
+  scaffold_script: fixture.sh

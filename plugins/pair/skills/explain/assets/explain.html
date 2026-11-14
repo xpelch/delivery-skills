@@ -1,0 +1,844 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>%%TITLE%%</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a métro trip. Sign-black bar, full-width line map (repos = lines, hops = stations), one station per screen, the code on the quai below. */
+:root {
+  --tile: #EEF1F3; --grid: #E0E5E9; --sheet: #FFFFFF; --sign: #17191C; --sign-fg: #FFFFFF;
+  --ink: #17191C; --soft: #4C5560; --rule: #CBD3D9;
+  --chg: #A04700; --chg-bg: #FFEEDC; --add: #1D6B3A; --add-bg: #E2F3E7; --del: #9B2C35; --del-bg: #F9E4E6;
+  --warn: #FFD200; --code-bg: #F6F8F9; --chip: #E9EDF0; --terminal: #17191C; --focus: #0072B5;
+  --hl-kw: #8A3FA0; --hl-str: #1D6B3A; --hl-com: #66717C; --hl-fn: #0B5D99; --hl-num: #A04700;
+  --signage: "Archivo", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --read: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --snap: cubic-bezier(.3, 1.45, .55, 1);
+  --mini-h: 52px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --tile: #0F1215; --grid: #181D22; --sheet: #171C21; --sign: #050607;
+  --ink: #E5E9ED; --soft: #9BA6B0; --rule: #2B333A;
+  --chg: #F5A15C; --chg-bg: #3A2416; --add: #7FD39A; --add-bg: #13301E; --del: #F09AA3; --del-bg: #3A1B20;
+  --code-bg: #11161A; --chip: #262D34; --terminal: #7A848E; --focus: #6CB8F0;
+  --hl-kw: #D29BE6; --hl-str: #7FD39A; --hl-com: #7F8C97; --hl-fn: #7FC0F2; --hl-num: #F5B27A; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --tile: #0F1215; --grid: #181D22; --sheet: #171C21; --sign: #050607;
+  --ink: #E5E9ED; --soft: #9BA6B0; --rule: #2B333A;
+  --chg: #F5A15C; --chg-bg: #3A2416; --add: #7FD39A; --add-bg: #13301E; --del: #F09AA3; --del-bg: #3A1B20;
+  --code-bg: #11161A; --chip: #262D34; --terminal: #7A848E; --focus: #6CB8F0;
+  --hl-kw: #D29BE6; --hl-str: #7FD39A; --hl-com: #7F8C97; --hl-fn: #7FC0F2; --hl-num: #F5B27A; color-scheme: dark }
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+html { scrollbar-color: var(--soft) var(--tile) }
+::selection { background: #F08123; color: #17191C }
+body { margin: 0; background-color: var(--tile); color: var(--ink); font: 18px/1.6 var(--read);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 48px 48px; }
+.pad { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px }
+button { font: inherit; color: inherit }
+code { font: .86em var(--mono); background: var(--chip); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere }
+.term { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted 2px; text-underline-offset: 4px }
+.term:hover { text-decoration-style: solid }
+.term code { pointer-events: none }
+.bar .lex { margin-left: auto; font: 700 14px var(--signage); letter-spacing: .06em; text-transform: uppercase; background: transparent; color: var(--sign-fg); border: 1px solid #5A626B; border-radius: 3px; padding: 6px 12px; cursor: pointer }
+.bar .lex:hover { border-color: var(--sign-fg) }
+.ask { position: absolute; z-index: 30; font: 700 14px var(--signage); background: #F08123; color: #17191C; border: 2px solid #17191C; border-radius: 4px; padding: 6px 12px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.25); display: inline-flex; gap: 6px; align-items: center }
+.ask svg { width: 16px; height: 16px }
+.ctx { position: fixed; z-index: 40; top: 0; right: 0; bottom: 0; width: min(460px, 100%); background: var(--sheet); color: var(--ink); border-left: 4px solid #F08123;
+  box-shadow: -8px 0 32px rgba(0,0,0,.22); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-right: env(safe-area-inset-right, 0px) }
+.ctx-head { background: var(--sign); color: var(--sign-fg); padding: 18px 20px 16px; display: grid; gap: 8px }
+.ctx-top { display: flex; justify-content: space-between; align-items: center; gap: 10px }
+.ctx-label { font: 800 12px var(--signage); letter-spacing: .12em; text-transform: uppercase; color: #F08123 }
+.ctx-close { background: transparent; border: 1px solid #5A626B; color: var(--sign-fg); border-radius: 3px; width: 34px; height: 34px; display: grid; place-items: center; cursor: pointer }
+.ctx-close svg { width: 18px; height: 18px }
+.ctx h2 { font: 800 30px/1.05 var(--signage); font-stretch: 80%; color: var(--sign-fg); overflow-wrap: anywhere }
+.ctx-src { font: 700 12px var(--signage); letter-spacing: .06em; text-transform: uppercase; justify-self: start; padding: 3px 8px; border-radius: 3px; background: #2F343A; color: #DDE2E7 }
+.ctx-src.ai { background: #F08123; color: #17191C }
+.ctx-body { overflow-y: auto; padding: 20px; display: grid; gap: 18px; align-content: start; flex: 1 }
+.ctx-body section { display: grid; gap: 4px }
+.ctx-body h3 { font: 800 13px var(--signage); letter-spacing: .1em; text-transform: uppercase; color: var(--soft); margin: 0 }
+.ctx-body p { margin: 0; font-size: 17px; line-height: 1.55 }
+.ctx-body .quote { font-size: 15px; color: var(--soft); border-left: 3px solid var(--rule); padding-left: 12px }
+.ctx-rel { display: flex; flex-wrap: wrap; gap: 8px }
+.ctx-rel .term { font: 500 14px var(--mono); border: 1px solid var(--rule); border-radius: 3px; padding: 3px 8px; text-decoration: none }
+.ctx-foot { padding: 14px 20px; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 10px; align-items: center }
+.ctx-foot .btn { font-size: 15px; padding: 10px 14px; color: var(--ink) }
+.thinking { display: flex; gap: 10px; align-items: center; color: var(--soft) }
+.thinking i { width: 12px; height: 12px; border-radius: 50%; background: #F08123 }
+@media (prefers-reduced-motion: no-preference) { .thinking i { animation: pulse 1s ease-in-out infinite alternate } @keyframes pulse { from { opacity: .3 } to { opacity: 1 } } }
+@media (max-width: 860px) { .ctx { top: auto; width: 100%; height: 74vh; border-left: 0; border-top: 4px solid #F08123; box-shadow: 0 -8px 32px rgba(0,0,0,.22) } }
+
+.bar { background: var(--sign); color: var(--sign-fg); }
+.bar-in { max-width: 1320px; margin: 0 auto; display: flex; align-items: center; gap: 16px; padding-block: 14px; min-height: 64px; flex-wrap: wrap }
+.roundel { width: 36px; height: 36px; border-radius: 50%; background: var(--sign-fg); color: var(--sign); display: grid; place-items: center; font: 800 18px var(--signage); flex: none }
+.bar a.key { font: 800 20px var(--signage); font-stretch: 80%; color: inherit; text-decoration: none; letter-spacing: .02em }
+.bar a.key:hover { text-decoration: underline; text-underline-offset: 4px }
+.bar .title { font: 500 17px var(--signage); font-stretch: 85%; color: #C9CFD5; min-width: 0; flex: 1 1 280px }
+.bar .depth { font: 700 12px var(--signage); letter-spacing: .1em; text-transform: uppercase; border: 1px solid #5A626B; color: #C9CFD5; padding: 4px 9px; border-radius: 3px }
+
+.map { background: var(--sheet); border-bottom: 1px solid var(--rule) }
+.map-in { max-width: 1320px; margin: 0 auto; position: relative; padding-block: 16px 10px }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font: 700 14px var(--signage); font-stretch: 85%; color: var(--soft); margin-bottom: 12px }
+.legend span { display: inline-flex; align-items: center; gap: 7px }
+.legend i { width: 26px; height: 9px; border-radius: 5px; background: var(--c) }
+.legend .key-x { width: 14px; height: 14px; border-radius: 50%; background: var(--sheet); border: 3px solid var(--terminal); box-shadow: inset 0 0 0 2px var(--sheet), inset 0 0 0 8px var(--soft) }
+.key-chg { font-family: var(--mono); font-weight: 600; font-stretch: normal; color: var(--chg) }
+.track-scroll { overflow-x: auto; scrollbar-width: thin; padding-bottom: 6px; position: relative }
+.stations { list-style: none; margin: 0; padding: 38px 0 0; display: flex; min-width: 100% }
+.stations li { flex: 1 0 104px; position: relative }
+.stations li::before { content: ""; position: absolute; top: 15px; left: 0; right: 0; height: 12px; background: var(--c) }
+.stations li:first-child::before { left: 50% } .stations li:last-child::before { right: 50% }
+.stations li.xfer::before { background: linear-gradient(90deg, var(--cp) 50%, var(--c) 50%) }
+.stop { display: grid; justify-items: center; gap: 6px; width: 100%; background: none; border: 0; padding: 0 4px 6px; cursor: pointer; position: relative; z-index: 1 }
+.dot { width: 40px; height: 40px; border-radius: 50%; background: var(--sheet); border: 7px solid var(--c); transition: transform .25s var(--snap) }
+.xfer .dot { border-color: var(--ink); box-shadow: inset 0 0 0 5px var(--sheet), inset 0 0 0 20px var(--c) }
+.end .dot { border-color: var(--terminal); background: var(--terminal) }
+.stop[aria-current="step"] .dot { background: var(--c); transform: scale(1.12) }
+.end .stop[aria-current="step"] .dot { background: var(--sheet) }
+.stop .name { font: 500 12px/1.3 var(--mono); color: var(--soft); text-align: center; overflow-wrap: normal; word-break: normal; hyphens: none; max-width: 112px }
+.stop[aria-current="step"] .name { color: var(--ink); font-weight: 600 }
+.stop.chg .name { color: var(--chg) }
+.stop:hover .dot { transform: scale(1.1) }
+.you { position: absolute; top: 0; left: 0; font: 800 12px var(--signage); letter-spacing: .1em; text-transform: uppercase; background: #F08123; color: #17191C;
+  padding: 5px 10px; border-radius: 3px; white-space: nowrap; transform: translateX(-50%); transition: left .35s var(--snap); pointer-events: none }
+.you::after { content: ""; position: absolute; left: 50%; bottom: -5px; margin-left: -5px; border: 5px solid transparent; border-bottom: 0; border-top-color: #F08123 }
+
+.station { max-width: 1320px; margin: 0 auto; padding-block: 28px 0; display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr); gap: 0; min-height: 560px; scroll-margin-top: calc(var(--mini-h) + 12px) }
+.panel { background: var(--c); color: var(--cf); padding: 36px 36px 30px; display: flex; flex-direction: column; gap: 14px; min-width: 0 }
+.panel .num { font: 800 112px/.85 var(--signage); font-stretch: 75% }
+.panel .via { font: 700 13px var(--signage); letter-spacing: .1em; text-transform: uppercase }
+.panel h1 { font: 800 clamp(30px, 3.4vw, 46px)/1.02 var(--signage); font-stretch: 78%; margin: 0; overflow-wrap: anywhere; text-wrap: balance }
+.panel h1.sentence { font-size: clamp(27px, 2.4vw, 34px); line-height: 1.1; font-stretch: 86%; overflow-wrap: normal }
+.panel h1.long { font-size: clamp(26px, 2.6vw, 36px) }
+.panel p { margin: 0; font-size: 19px; max-width: 34ch }
+.panel .tech { font: 500 14px/1.55 var(--mono); max-width: 40ch; overflow-wrap: anywhere }
+.panel .tech code { background: transparent; border: 0; padding: 0; color: inherit; font-size: 1em }
+.panel code { background: rgba(255,255,255,.18); border-color: transparent; color: inherit }
+.panel .actions { margin-top: auto; display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px }
+.btn { font: 700 16px var(--signage); font-stretch: 90%; padding: 13px 18px; border-radius: 4px; border: 2px solid var(--sign); background: var(--sign); color: var(--sign-fg); cursor: pointer; display: inline-flex; gap: 8px; align-items: center }
+.btn.ghost { background: transparent; color: inherit; border-color: currentColor }
+.panel.dark .btn:not(.ghost) { background: #F08123; border-color: #F08123; color: #17191C }
+.panel.dark .btn.ghost { border-color: #5A626B }
+.btn[disabled] { opacity: .45; cursor: default }
+.btn svg { width: 18px; height: 18px }
+.view { background: var(--sheet); border: 1px solid var(--rule); border-left: 0; padding: 30px 36px; min-width: 0; display: grid; align-content: start; gap: 18px }
+.pic { min-height: 300px; display: grid; place-items: center; overflow-x: auto }
+.pic .nodeLabel, .pic .edgeLabel { font-weight: 600; font-stretch: 90% }
+.pic svg { width: auto; max-width: 100% !important; height: auto; min-height: 260px; max-height: 460px }
+.caption { color: var(--soft); font-size: 17px; max-width: 60ch; margin: 0 }
+.change { background: var(--chg-bg); padding: 14px 18px; border-radius: 4px; font-size: 17px; max-width: 64ch }
+.change b { display: block; font: 800 12px var(--signage); letter-spacing: .1em; text-transform: uppercase; color: var(--chg); margin-bottom: 4px }
+h2 { font: 800 26px/1.15 var(--signage); font-stretch: 82%; margin: 0 }
+.tldr { border: 2px solid #F08123; border-radius: 6px; padding: 16px 18px }
+.ba { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px }
+.ba > div { border: 2px solid var(--rule); border-radius: 6px; padding: 16px 18px; min-width: 0 }
+.ba > .after { border-color: #F08123 }
+.ba h3, .tldr h2 { font: 800 13px var(--signage); letter-spacing: .1em; text-transform: uppercase; margin: 0 0 8px; color: var(--soft) }
+.ba ul, .tldr ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 16.5px }
+.seg { display: inline-flex; border: 2px solid var(--sign); border-radius: 5px; overflow: hidden; justify-self: start }
+.seg button { font: 700 14px var(--signage); background: transparent; border: 0; padding: 7px 16px; cursor: pointer; color: var(--ink) }
+.seg button[aria-pressed="true"] { background: var(--sign); color: var(--sign-fg) }
+.summary { font-size: 20px; line-height: 1.5; margin: 0; max-width: 38ch }
+.station.start { min-height: 0 }
+.panel h1 .layer { font-size: .45em; font-weight: 700; letter-spacing: .02em; opacity: .75; white-space: nowrap }
+.fold { border-top: 1px solid var(--rule); padding-top: 12px }
+.fold summary { font: 800 15px var(--signage); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); cursor: pointer; padding: 4px 0 }
+.fold > :not(summary) { margin-top: 12px }
+.fold p { font-size: 16.5px; max-width: 70ch }
+
+.atlas-head { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center }
+.atlas-head h2 { margin-right: auto }
+.metro { overflow-x: auto; scrollbar-width: thin; padding-bottom: 4px }
+.m-svg { display: block; max-width: none }
+.m-band { fill: var(--tile) }
+.m-row { display: grid }
+.m-row > * { grid-area: 1 / 1 }
+.m-pins { pointer-events: none; display: flex; flex-direction: column }
+.m-pins > div { padding: 12px 0 0 }
+.m-pin { position: sticky; left: 10px; display: inline-block; background: var(--c); color: var(--cf); font: 700 14px var(--signage); font-stretch: 85%; letter-spacing: .04em; padding: 2px 9px; border-radius: 4px }
+.m-track { fill: none; stroke-width: 10; stroke-linecap: round }
+.m-track.missing { stroke: #F08123; stroke-dasharray: 2 14; stroke-width: 6 }
+.m-track.loose { stroke: var(--soft); stroke-dasharray: 2 12; stroke-width: 5 }
+.m-track.future { stroke-dasharray: 16 10; stroke-linecap: butt }
+.m-link rect { fill: var(--sheet); stroke: var(--soft); stroke-width: 1.5 }
+.m-link.missing rect { stroke: #F08123; stroke-width: 2 }
+.m-link.future rect { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 5 3 }
+.m-link text { font: 600 13px var(--read); fill: var(--ink); text-anchor: middle }
+.m-stop { cursor: pointer; outline: none }
+.m-ring { fill: var(--sheet); stroke-width: 7; transition: stroke-width .2s }
+.m-stop:hover .m-ring, .m-stop:focus-visible .m-ring { stroke-width: 10 }
+.m-stop:focus-visible .m-num { text-decoration: underline }
+.m-num { font: 800 14px var(--signage); fill: var(--ink); text-anchor: middle }
+.m-name { font: 500 13px var(--mono); fill: var(--ink); text-anchor: middle; paint-order: stroke; stroke: var(--tile); stroke-width: 5px; stroke-linejoin: round }
+.m-stop.chg .m-name { fill: var(--chg); font-weight: 700 }
+.m-stop.dim .m-ring { stroke-dasharray: 5 5 }
+.m-stop.dim .m-name, .m-stop.dim .m-num { fill: var(--soft) }
+.m-chip { fill: var(--chip) }
+.m-chip.gap { fill: none; stroke: #F08123; stroke-width: 1.5; stroke-dasharray: 4 3 }
+.m-chipt { font: 500 12px var(--mono); fill: var(--ink); text-anchor: middle }
+.legend.below { margin: 0 }
+.legend .m-key { width: 26px; height: 0; border-radius: 0; background: none; border-top: 5px dotted }
+.legend .m-key.missing { border-color: #F08123 } .legend .m-key.loose { border-color: var(--soft) }
+.legend .m-key.future { border-top: 5px dashed var(--ink) }
+.legend .m-key.chip { height: 14px; border: 0; border-radius: 3px; background: var(--chip) }
+.mini { position: fixed; z-index: 25; top: 0; left: 0; right: 0; background: var(--sign); color: var(--sign-fg); box-shadow: 0 2px 14px rgba(0,0,0,.28) }
+.mini-in { max-width: 1320px; margin: 0 auto; height: var(--mini-h); display: flex; align-items: center; gap: 14px }
+.mini button { flex: none; width: 36px; height: 36px; display: grid; place-items: center; background: transparent; color: inherit; border: 1px solid #5A626B; border-radius: 4px; cursor: pointer }
+.mini button:hover:not([disabled]) { border-color: var(--sign-fg) }
+.mini button[disabled] { opacity: .35; cursor: default }
+.mini button svg { width: 18px; height: 18px }
+.mini-track { display: flex; align-items: center; gap: 5px; flex: none }
+.mini-track i { width: 10px; height: 10px; border-radius: 50%; border: 3px solid var(--c); background: var(--sign) }
+.mini-track i.on { width: 16px; height: 16px; background: var(--c) }
+.mini-name { font: 600 15px var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 }
+.mini-name b { font: 800 15px var(--signage); background: var(--c); color: var(--cf); border-radius: 3px; padding: 1px 7px; margin-right: 8px }
+.panel.hop .actions { margin-top: 0; padding-top: 4px }
+.panel .tech.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden }
+.more-tech { align-self: flex-start; background: none; border: 0; padding: 0; color: inherit; font: 600 14px var(--read); text-decoration: underline; text-underline-offset: 3px; cursor: pointer }
+.tickets { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px }
+.epic { border: 2px solid var(--rule); border-radius: 6px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; min-width: 0 }
+.epic > b { font: 800 19px/1.2 var(--signage); font-stretch: 85% }
+.epic ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px }
+.epic li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 6px 8px; border-radius: 4px; background: var(--tile); font-size: 15px }
+.epic li.gap { background: transparent; border: 2px dashed #F08123 }
+.epic .tk { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; min-width: 0 }
+.epic .tk a, .epic-head a { font: 500 13px var(--mono); color: var(--focus); text-underline-offset: 3px; white-space: nowrap }
+.epic-head { display: flex; gap: 8px; align-items: center; justify-content: space-between }
+.st { font: 700 11px var(--signage); letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; background: var(--chip); color: var(--soft); white-space: nowrap }
+.st.done { background: var(--add-bg); color: var(--add) } .st.wip { background: transparent; color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus) } .st.gap { background: #F08123; color: #17191C }
+.hops { display: flex; gap: 4px }
+.hop-chip { width: 26px; height: 26px; border-radius: 50%; border: 4px solid var(--c); background: var(--sheet); font: 800 11px var(--signage); color: var(--ink); cursor: pointer; display: grid; place-items: center; padding: 0 }
+.hop-chip:hover { background: var(--c); color: var(--cf) }
+.signs.blocking li { background: var(--chg-bg); padding: 14px 16px; border-radius: 6px }
+.signs.blocking b { font-size: 21px }
+
+.quai { max-width: 1320px; margin: 0 auto; }
+.quai-in { background: var(--sheet); border: 1px solid var(--rule); border-top: 0; padding: 26px 36px 32px; display: grid; gap: 16px }
+.quai-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px }
+.quai-head h2 { font-size: 22px }
+.codefile { border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; min-width: 0 }
+.codehead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 8px 14px; background: var(--tile); border-bottom: 1px solid var(--rule); font: 13px var(--mono); color: var(--soft) }
+.codehead a { color: var(--focus); text-underline-offset: 3px }
+.codebody { overflow-x: auto; background: var(--code-bg) }
+.codebody table { border-collapse: collapse; font: 13.5px/1.65 var(--mono); width: 100% }
+.codebody td { padding: 0 14px 0 0; white-space: pre; vertical-align: top }
+.codebody td.n { color: var(--soft); text-align: right; padding: 0 10px 0 14px; user-select: none; width: 1%; font-variant-numeric: tabular-nums }
+.codebody tr.mark { background: var(--chg-bg) } .codebody tr.mark td.n { color: var(--chg) }
+.codebody tr.add { background: var(--add-bg) } .codebody tr.add td.n { color: var(--add) }
+.codebody tr.del { background: var(--del-bg) } .codebody tr.del td.n { color: var(--del) }
+.hljs-keyword, .hljs-built_in, .hljs-type { color: var(--hl-kw) }
+.hljs-string, .hljs-regexp { color: var(--hl-str) }
+.hljs-comment { color: var(--hl-com); font-style: italic }
+.hljs-title, .hljs-title.function_, .hljs-property { color: var(--hl-fn) }
+.hljs-number, .hljs-literal { color: var(--hl-num) }
+.reading { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; counter-reset: r }
+.reading li { counter-increment: r; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px }
+.reading li::before { content: counter(r); width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--sign); display: grid; place-items: center; font: 800 12px var(--signage) }
+.reading a { font: 500 14px var(--mono); color: var(--focus); overflow-wrap: anywhere; text-underline-offset: 3px }
+.reading span { display: block; font-size: 16px; color: var(--soft) }
+
+.signs { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px }
+.signs li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 14px; align-items: start }
+.signs svg { width: 34px; height: 30px }
+.signs b { font: 800 19px/1.2 var(--signage); font-stretch: 85%; display: block; margin-bottom: 2px }
+.signs .cite { font: 13px var(--mono); color: var(--soft); overflow-wrap: anywhere }
+.tag { font: 800 11px var(--signage); letter-spacing: .1em; text-transform: uppercase; color: var(--chg); margin-left: 6px }
+.open { margin: 0; padding-left: 22px; display: grid; gap: 6px }
+.status { font-size: 15px; color: var(--soft) }
+.lexique { margin: 0; display: grid; gap: 6px }
+.lexique div { display: grid; grid-template-columns: minmax(0, 180px) minmax(0, 1fr); gap: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--rule); font-size: 16px }
+.lexique dt { font: 500 14px var(--mono) }
+.lexique dd { margin: 0 }
+.foot { max-width: 1320px; margin: 0 auto; padding-block: 18px 48px; color: var(--soft); font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 18px }
+.foot a { color: var(--soft) }
+.kbd { font: 12px var(--mono); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 5px }
+
+@media (prefers-reduced-motion: no-preference) {
+  .enter { animation: snap .32s var(--snap) both }
+  @keyframes snap { from { transform: translateX(28px); opacity: .2 } to { transform: none; opacity: 1 } }
+}
+@media (prefers-reduced-motion: reduce) { .you, .dot { transition: none } }
+@media (max-width: 860px) {
+  .station { grid-template-columns: minmax(0, 1fr); min-height: 0; padding-block: 16px 0 }
+  .panel { padding: 26px 22px } .panel .num { font-size: 80px }
+  .view { border-left: 1px solid var(--rule); border-top: 0; padding: 22px }
+  .quai-in { padding: 20px 18px 24px }
+  .ba { grid-template-columns: minmax(0, 1fr) }
+  .lexique div { grid-template-columns: minmax(0, 1fr); gap: 2px }
+}
+</style>
+
+<header class="bar pad"><div class="bar-in" id="bar"></div></header>
+<nav class="map pad" aria-label="Plan de la ligne"><div class="map-in" id="map"></div></nav>
+<main class="pad">
+  <div class="station" id="station"><p>Chargement…</p></div>
+  <section class="quai atlas" id="atlas" aria-label="La carte du trajet" hidden></section>
+  <section class="quai" id="quai" aria-label="Le code de cette station"></section>
+</main>
+<footer class="foot pad" id="foot"></footer>
+<nav class="mini" id="mini" aria-label="Station courante" hidden></nav>
+<button type="button" class="ask" id="ask" hidden></button>
+<aside class="ctx" id="ctx" hidden aria-labelledby="ctx-title"></aside>
+
+<script type="application/json" id="explain-data">%%DATA%%</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+(() => {
+  const d = JSON.parse(document.getElementById("explain-data").textContent);
+  // What the page explains: its name, "le <subject>" for what changes the code, "ce <subject>" for the page itself.
+  const KINDS = { ticket: ["Ticket", "le ticket", "ce ticket"], diff: ["Changement", "le changement", "ce changement"],
+    flow: ["Flow", "le changement", "ce flow"], module: ["Module", "le changement", "ce module"] };
+  const [SUBJECT, LE, CE] = KINDS[d.kind] || KINDS.ticket;
+  const LINES = [["#F08123", "#17191C"], ["#00804A", "#FFFFFF"], ["#0072B5", "#FFFFFF"], ["#FFD200", "#17191C"], ["#8E3C9E", "#FFFFFF"]];
+  const SIGN = ["var(--terminal)", "var(--sign-fg)"];
+  const terms = Object.fromEntries((d.glossary || []).map(g => [g.id, g]));
+  const repos = d.repos || {};
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const glossText = g => g.def + (g.analogy ? " — " + g.analogy : "");
+  const TERM_RE = /\{\{([\w-]+)(?:\|([^}]+))?\}\}/g;
+  const termLabel = (id, label) => label || (terms[id] ? terms[id].term : id);
+  const plain = t => String(t || "").replace(TERM_RE, (_, id, label) => termLabel(id, label));
+  const fmt = s => esc(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(TERM_RE, (m, id, label) => {
+      const g = terms[id];
+      if (!g) return termLabel(id, label);
+      const shown = termLabel(id, label);
+      return `<button type="button" class="term" data-term="${esc(id)}" title="${esc(g.def)}">${g.code ? `<code>${shown}</code>` : shown}</button>`;
+    });
+  const icon = name => ({
+    down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
+    up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+    next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+    prev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+    warn: '<svg viewBox="0 0 34 30" aria-hidden="true"><path d="M17 2 32 28H2Z" fill="#FFD200" stroke="#17191C" stroke-width="2.5" stroke-linejoin="round"/><path d="M17 11v8" stroke="#17191C" stroke-width="3" stroke-linecap="round"/><circle cx="17" cy="23.5" r="1.8" fill="#17191C"/></svg>'
+  }[name]);
+
+  const repoNames = [];
+  const hopRepo = h => h.repo || (h.code && h.code.repo) || "";
+  (d.flow || []).forEach(h => { const r = hopRepo(h); if (r && !repoNames.includes(r)) repoNames.push(r); });
+  const lineOf = r => LINES[Math.max(0, repoNames.indexOf(r)) % LINES.length];
+  const lineAt = stop => stop.kind === "hop" ? lineOf(stop.repo) : SIGN;
+  // An identifier may break between its camelCase words, never inside one.
+  const breakName = name => esc(name).replace(/([a-z])([A-Z])/g, "$1<wbr>$2");
+
+  const stops = [{ kind: "start", name: "Départ" }]
+    .concat((d.flow || []).map((h, i) => ({ kind: "hop", hop: h, n: i + 1, name: h.station || h.tech.replace(/`/g, "").split(/[\s(→]/)[0], repo: hopRepo(h) })))
+    .concat([{ kind: "end", name: "Terminus" }]);
+
+  // A code link on the repo's own host; `slug` alone (older pages) means GitHub.
+  const ghUrl = (repo, path, start, end) => {
+    const r = repos[repo];
+    if (!r) return "";
+    const web = r.web || (r.slug ? `https://github.com/${r.slug}` : "");
+    if (!web) return "";
+    const last = end && end !== start ? end : 0;
+    if (r.host === "gitlab") return `${web}/-/blob/${r.sha}/${path}` + (start ? `#L${start}` + (last ? `-${last}` : "") : "");
+    if (r.host === "bitbucket") return `${web}/src/${r.sha}/${path}` + (start ? `#lines-${start}` + (last ? `:${last}` : "") : "");
+    return `${web}/blob/${r.sha}/${path}` + (start ? `#L${start}` + (last ? `-L${last}` : "") : "");
+  };
+  const lang = path => /\.go$/.test(path) ? "go" : /\.tsx?$/.test(path) ? "typescript" : /\.json$/.test(path) ? "json" : /\.sql$/.test(path) ? "sql" : "plaintext";
+  const highlight = (text, path) => {
+    try { if (window.hljs) return hljs.highlight(text, { language: lang(path), ignoreIllegals: true }).value.split("\n"); } catch (e) {}
+    return esc(text).split("\n");
+  };
+  const codeBlock = c => {
+    const lines = c.text.replace(/\n$/, "").split("\n");
+    const html = highlight(lines.join("\n"), c.path);
+    const marks = new Set(c.mark || []);
+    const end = c.start + lines.length - 1;
+    const url = ghUrl(c.repo, c.path, c.start, end);
+    const rows = html.map((l, i) => `<tr class="${marks.has(c.start + i) ? "mark" : ""}"><td class="n">${c.start + i}</td><td>${l || " "}</td></tr>`).join("");
+    return `<div class="codefile"><div class="codehead"><span>${esc(c.repo)} · ${esc(c.path)}:${c.start}-${end}</span>${url ? `<a href="${esc(url)}">Ouvrir le fichier</a>` : ""}</div><div class="codebody"><table>${rows}</table></div></div>`;
+  };
+  const diffBlock = (p, path) => {
+    const lines = p.replace(/\n$/, "").split("\n");
+    const html = highlight(lines.map(l => l.slice(2)).join("\n"), path);
+    const rows = lines.map((l, i) => { const k = l[0] === "+" ? "add" : l[0] === "-" ? "del" : ""; return `<tr class="${k}"><td class="n">${k === "add" ? "+" : k === "del" ? "−" : ""}</td><td>${html[i] || " "}</td></tr>`; }).join("");
+    return `<div class="codefile"><div class="codehead"><span>Esquisse du changement</span></div><div class="codebody"><table>${rows}</table></div></div>`;
+  };
+
+  const mmd = {};
+  let mmdReady = false, mmdSeq = 0;
+  const initMermaid = () => {
+    if (!window.mermaid) return;
+    const css = getComputedStyle(document.documentElement);
+    const v = n => css.getPropertyValue(n).trim();
+    // Station pictures speak the signage: Archivo labels, ink boxes and ink track, like the panels beside them.
+    mermaid.initialize({ startOnLoad: false, theme: "base", fontFamily: "Archivo, Arial Narrow, sans-serif",
+      flowchart: { curve: "basis", padding: 18, nodeSpacing: 44, rankSpacing: 56, htmlLabels: true },
+      themeVariables: { fontFamily: "Archivo, Arial Narrow, sans-serif", fontSize: "19px", primaryColor: v("--sheet"), primaryBorderColor: v("--ink"), primaryTextColor: v("--ink"),
+        lineColor: v("--ink"), textColor: v("--ink"), edgeLabelBackground: v("--sheet"), clusterBkg: v("--tile"), clusterBorder: v("--rule") } });
+    mmdReady = true;
+  };
+  // `here` is the station's line [fill, ink]: the highlighted node wears the line it sits on.
+  const draw = (el, src, here) => {
+    if (!el || !src) return;
+    initMermaid();
+    if (!mmdReady) { el.textContent = ""; return; }
+    const [hereFill, hereInk] = here;
+    const key = (document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")) + hereFill + src;
+    if (mmd[key]) { el.innerHTML = mmd[key]; return; }
+    const css = getComputedStyle(document.documentElement);
+    const v = n => css.getPropertyValue(n).trim();
+    const defs = `\nclassDef default fill:${v("--sheet")},stroke:${v("--ink")},stroke-width:3px,color:${v("--ink")}\nlinkStyle default stroke:${v("--ink")},stroke-width:3px\nclassDef mx-real fill:${v("--chg-bg")},stroke:${v("--chg")},color:${v("--ink")},stroke-width:2.5px\nclassDef mx-gone fill:${v("--del-bg")},stroke:${v("--del")},color:${v("--ink")},stroke-dasharray:6 4\nclassDef mx-here fill:${hereFill},stroke:${v("--ink")},color:${hereInk},stroke-width:2.5px\nclassDef mx-gap fill:${v("--sheet")},stroke:#F08123,color:${v("--ink")},stroke-width:2.5px,stroke-dasharray:6 4\n`;
+    mermaid.render("mmd-" + (++mmdSeq), src.trim().replace(/(\bclass\s+[\w,]+\s+|:::)(real|gone|here|gap)\b/g, "$1mx-$2") + defs)
+      .then(({ svg }) => { mmd[key] = svg; el.innerHTML = svg; })
+      .catch(e => { el.textContent = "Schéma illisible : " + e.message; });
+  };
+
+  document.getElementById("bar").innerHTML = `<span class="roundel" aria-hidden="true">M</span>${d.url ? `<a class="key" href="${esc(d.url)}">${esc(d.key)}</a>` : `<span class="key">${esc(d.key || (KINDS[d.kind] && d.kind !== "ticket" ? SUBJECT.toLowerCase() : ""))}</span>`}<span class="title">${esc(plain(d.title))}</span><span class="depth">${d.depth === "léger" ? "trajet court" : "trajet complet"}</span>${(d.glossary || []).length ? `<button type="button" class="lex" data-lexicon>Lexique</button>` : ""}`;
+
+  const isXfer = i => stops[i].kind === "hop" && stops[i - 1]?.kind === "hop" && stops[i - 1].repo !== stops[i].repo;
+  const isChg = s => s.kind === "hop" && s.hop.changed;
+  const xferKey = stops.some((_, i) => isXfer(i)) ? `<span><i class="key-x"></i>correspondance</span>` : "";
+  const chgKey = stops.some(isChg) ? `<span><span class="key-chg">nom</span>modifié par ${LE}</span>` : "";
+
+  document.getElementById("map").innerHTML = `
+    <div class="legend">${repoNames.map(r => `<span><i style="--c:${lineOf(r)[0]}"></i>${esc(r)}</span>`).join("")}${xferKey}${chgKey}</div>
+    <div class="track-scroll" id="track"><ol class="stations" id="stations">${stops.map((s, i) => {
+      const line = lineAt(s);
+      const prev = stops[i - 1];
+      const prevLine = prev && prev.kind === "hop" ? lineOf(prev.repo) : line;
+      const xfer = isXfer(i);
+      const cls = [s.kind === "hop" ? "" : "end", xfer ? "xfer" : ""].join(" ");
+      const label = s.kind === "hop" ? `${s.n}. ${s.name}` : s.name;
+      return `<li class="${cls}" style="--c:${line[0]};--cp:${prevLine[0]}"><button type="button" class="stop${isChg(s) ? " chg" : ""}" data-i="${i}" aria-label="${esc(label)}${xfer ? ", correspondance" : ""}"><span class="dot"></span><span class="name">${breakName(s.name)}</span></button></li>`;
+    }).join("")}</ol><span class="you" id="here" aria-hidden="true">Vous êtes ici</span></div>`;
+
+  const store = "explain:" + (d.project ? d.project + ":" : "") + (d.key || d.title);
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(store) || "{}"); } catch (e) {}
+  const persist = () => { try { localStorage.setItem(store, JSON.stringify(saved)); } catch (e) {} };
+  let quaiOpen = !!saved.quai;
+  let at = 0;
+
+  const actions = i => {
+    const last = stops.length - 1;
+    const hop = stops[i].kind === "hop" ? stops[i].hop : null;
+    const hasCode = hop && (hop.code || hop.diff);
+    const nextLabel = i === 0 ? "Monter à bord" : i === last - 1 ? "Terminus" : "Station suivante";
+    return `<div class="actions">
+      ${i < last ? `<button type="button" class="btn" data-go="${i + 1}">${nextLabel} ${icon("next")}</button>` : ""}
+      ${hasCode ? `<button type="button" class="btn ghost" id="toQuai" aria-expanded="${quaiOpen}" aria-controls="quai">${quaiOpen ? "Remonter du code " + icon("up") : "Descendre dans le code " + icon("down")}</button>` : ""}
+      ${i > 0 ? `<button type="button" class="btn ghost" data-go="${i - 1}" aria-label="Station précédente">${icon("prev")}</button>` : ""}
+    </div>`;
+  };
+
+  const renderStart = () => `
+      <div class="panel dark" style="--c:var(--sign);--cf:var(--sign-fg)">
+        <h1 class="sentence">${fmt(d.title)}</h1>
+        <div class="via">Départ · ${(d.flow || []).length} stations</div>
+        ${actions(0)}
+      </div>
+      <div class="view">
+        ${(d.tldr || []).length ? `<div class="tldr"><h2>En bref</h2><ul>${d.tldr.map(x => `<li>${fmt(x)}</li>`).join("")}</ul></div>` : d.summary ? `<p class="summary">${fmt(d.summary)}</p>` : ""}
+      </div>`;
+  // Départ keeps one screen for the summary and the map; the rest of the briefing folds under it.
+  const foldsHtml = () => [
+    (d.product || d.summary) && `<details class="fold"><summary>${d.product ? `Aujourd'hui et après ${LE}` : "En résumé"}</summary>${d.summary ? `<p class="summary">${fmt(d.summary)}</p>` : ""}${d.product ? `<div class="ba"><div><h3>Aujourd'hui</h3><ul>${(d.product.before || []).map(x => `<li>${fmt(x)}</li>`).join("")}</ul></div><div class="after"><h3>Après ${LE}</h3><ul>${(d.product.after || []).map(x => `<li>${fmt(x)}</li>`).join("")}</ul></div></div>` : ""}</details>`,
+    (d.need || []).length && `<details class="fold"><summary>Le besoin</summary>${d.need.map(p => `<p>${fmt(p)}</p>`).join("")}</details>`,
+    (d.tickets || []).length && `<details class="fold"><summary>Les tickets sur le trajet (${d.tickets.length + ticketChildren.filter(t => !t.gap).length})</summary>${ticketsHtml()}</details>`,
+  ].filter(Boolean).join("");
+  const ticketChildren = (d.tickets || []).flatMap(ep => ep.children || []);
+  // Jira status → pill tone: shipped, moving, or not started.
+  const statusTone = s => /done|closed|in qa|released/i.test(s || "") ? "done" : /progress|review|development/i.test(s || "") ? "wip" : "";
+  const jiraLink = key => key && d.url ? `<a href="${esc(d.url.replace(/\/browse\/.*$/, "/browse/") + key)}">${esc(key)}</a>` : esc(key || "");
+  const hopChips = ns => (ns || []).filter(n => stops[n] && stops[n].kind === "hop").map(n => {
+    const line = lineOf(stops[n].repo);
+    return `<button type="button" class="hop-chip" data-go="${n}" style="--c:${line[0]};--cf:${line[1]}" title="Station ${n} : ${esc(stops[n].name)}" aria-label="Station ${n} : ${esc(stops[n].name)}">${n}</button>`;
+  }).join("");
+  const ticketRow = t => `<li class="${t.gap ? "gap" : ""}"><span class="tk">${t.gap ? `<span class="st gap">pas de ticket</span>` : jiraLink(t.key)}<span>${fmt(t.title)}</span>${!t.gap && t.status ? `<span class="st ${statusTone(t.status)}">${esc(t.status)}</span>` : ""}</span><span class="hops">${hopChips(t.stations)}</span></li>`;
+  const ticketsHtml = () => `<p class="caption">Chaque pastille mène à la station que le ticket touche. Un trait pointillé orange : un bout du trajet qu'aucun ticket ne couvre.</p>
+      <div class="tickets">${d.tickets.map(ep => `<div class="epic"><div class="epic-head">${jiraLink(ep.key)}${ep.status ? `<span class="st ${statusTone(ep.status)}">${esc(ep.status)}</span>` : ""}</div><b>${fmt(ep.title)}</b>${(ep.children || []).length ? `<ul>${ep.children.map(ticketRow).join("")}</ul>` : ""}</div>`).join("")}</div>`;
+  // The trip map: the strip's own stations, one lane per repo, in trip order. Avant and Après share
+  // the layout; Après only marks what the ticket changes and pins the tickets under their stations.
+  const METRO = { pad: 16, col: 126, lineY: 52, name: 16 };
+  let metroMode = "before";
+  const nameLines = name => {
+    const parts = name.match(/[A-Z]?[a-z0-9]+|[A-Z0-9]+(?![a-z])|_+|[^A-Za-z0-9_]+/g) || [name];
+    const lines = [""];
+    parts.forEach(p => { if (lines[lines.length - 1] && (lines[lines.length - 1] + p).length > METRO.name) lines.push(p); else lines[lines.length - 1] += p; });
+    return lines.length > 2 ? [lines[0], lines.slice(1).join("").slice(0, METRO.name - 1) + "…"] : lines;
+  };
+  // The tickets on a station, keys first; any number of uncovered pieces show as one « aucun ticket ».
+  const ticketsAt = n => {
+    const here = ticketChildren.filter(t => (t.stations || []).includes(n));
+    return here.filter(t => !t.gap).concat(here.some(t => t.gap) ? [{ gap: true }] : []);
+  };
+  const metroSvg = width => {
+    const hops = stops.filter(s => s.kind === "hop"), after = metroMode === "after";
+    const lane = (d.tickets || []).length ? 192 : 136;
+    const col = Math.max(METRO.col, (width - METRO.pad * 2) / hops.length);
+    const W = Math.round(METRO.pad * 2 + col * hops.length), H = lane * repoNames.length;
+    const pos = s => ({ x: METRO.pad + col * (s.n - 0.5), y: repoNames.indexOf(s.repo) * lane + METRO.lineY });
+    const bands = repoNames.map((r, k) => `<rect class="m-band" x="0" y="${k * lane + 4}" width="${W}" height="${lane - 8}" rx="6"/>`).join("");
+    // Lane names are HTML pinned to the left edge, so they stay in view while a narrow screen scrolls the plan.
+    const pins = repoNames.map(r => { const [c, f] = lineOf(r); return `<div style="height:${lane}px"><span class="m-pin" style="--c:${c};--cf:${f}">${esc(r)}</span></div>`; }).join("");
+    const labels = [];
+    // A link's label sits in the lower station's lane, above its line and toward the other station:
+    // the column there is empty (each column holds one station) and the tickets pinned below stay clear.
+    const linkLabel = (a, b, text, cls) => {
+      const w = Math.round(text.length * 7.4 + 20), low = a.y >= b.y ? a : b, high = low === a ? b : a;
+      const cx = a.y === b.y ? (a.x + b.x) / 2 : low.x + (high.x < low.x ? -1 : 1) * (24 + w / 2), cy = low.y - 30;
+      labels.push(`<g class="m-link ${cls}"><rect x="${cx - w / 2}" y="${cy - 13}" width="${w}" height="26" rx="13"/><text x="${cx}" y="${cy + 5}">${esc(text)}</text></g>`);
+    };
+    const tracks = hops.slice(1).map((s, k) => {
+      const p = hops[k], a = pos(p), b = pos(s), xm = (a.x + b.x) / 2;
+      const l = (d.links || []).find(x => x.from === p.n && x.to === s.n);
+      const path = a.y === b.y ? `M${a.x} ${a.y}H${b.x}` : `M${a.x} ${a.y}C${xm} ${a.y} ${xm} ${b.y} ${b.x} ${b.y}`;
+      // Après draws what the ticket builds: a link with `after` becomes a dashed segment of the line it joins.
+      const future = after && l && l.after;
+      const text = l && (future ? l.after : l.label);
+      if (text) linkLabel(a, b, text, future ? "future" : l.missing ? "missing" : "");
+      const cls = !l ? "" : future ? " future" : l.missing ? " missing" : " loose";
+      return `<path class="m-track${cls}" d="${path}"${!l || future ? ` stroke="${lineOf(s.repo)[0]}"` : ""}/>`;
+    }).join("");
+    const stations = hops.map(s => {
+      const { x, y } = pos(s), [c] = lineOf(s.repo), i = stops.indexOf(s), xfer = isXfer(i), chg = s.hop.changed;
+      const tks = after ? ticketsAt(s.n) : [];
+      const chips = tks.slice(0, 3).map((t, k) => `<rect class="m-chip${t.gap ? " gap" : ""}" x="${x - 48}" y="${y + 66 + k * 24}" width="96" height="20" rx="3"/><text class="m-chipt" x="${x}" y="${y + 80 + k * 24}">${t.gap ? "aucun ticket" : esc(t.key)}</text>`).join("")
+        + (tks.length > 3 ? `<text class="m-chipt" x="${x}" y="${y + 80 + 3 * 24}">+${tks.length - 3}</text>` : "");
+      return `<a href="#s${i}" class="m-stop${after && chg ? " chg" : ""}${after && !chg ? " dim" : ""}" aria-label="Station ${s.n} : ${esc(s.name)}${xfer ? ", correspondance" : ""}${after && chg ? ", change avec ${LE}" : ""}">
+        <circle class="m-ring" cx="${x}" cy="${y}" r="17" stroke="${xfer ? "var(--ink)" : c}"/>${xfer ? `<circle cx="${x}" cy="${y}" r="10.5" fill="none" stroke="${c}" stroke-width="4"/>` : ""}
+        <text class="m-num" x="${x}" y="${y + 4.5}">${s.n}</text>
+        ${nameLines(s.name).map((ln, k) => `<text class="m-name" x="${x}" y="${y + 38 + k * 16}">${esc(ln)}</text>`).join("")}
+        ${chips}</a>`;
+    }).join("");
+    return `<div class="m-row" style="width:${W}px"><svg class="m-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="group" aria-label="Le trajet, une ligne par repo">${bands}${tracks}${labels.join("")}${stations}</svg><div class="m-pins" aria-hidden="true">${pins}</div></div>`;
+  };
+  const metroLegend = () => {
+    const links = d.links || [], after = metroMode === "after";
+    return [
+      xferKey,
+      links.some(l => l.missing && !(after && l.after)) && `<span><i class="m-key missing"></i>aucun lien entre ces stations</span>`,
+      after && links.some(l => l.after) && `<span><i class="m-key future"></i>lien que ${LE} doit créer</span>`,
+      links.some(l => !l.missing) && `<span><i class="m-key loose"></i>pas un appel direct</span>`,
+      after && chgKey,
+      after && (d.tickets || []).length && `<span><i class="m-key chip"></i>ticket qui touche la station</span>`,
+    ].filter(Boolean).join("");
+  };
+  const drawMetro = () => {
+    const m = document.getElementById("metro");
+    if (!m) return;
+    const y = scrollY, left = m.scrollLeft;
+    m.innerHTML = metroSvg(m.clientWidth);
+    m.scrollLeft = left;
+    if (scrollY !== y) scrollTo(scrollX, y);
+    document.getElementById("m-legend").innerHTML = metroLegend();
+  };
+  const renderAtlas = () => {
+    const a = document.getElementById("atlas");
+    a.hidden = false;
+    a.innerHTML = `<div class="quai-in">
+      <div class="atlas-head"><h2>Le trajet en un coup d'œil</h2><div class="seg" role="group" aria-label="Version du plan"><button type="button" data-metro="before" aria-pressed="${metroMode === "before"}">Avant</button><button type="button" data-metro="after" aria-pressed="${metroMode === "after"}">Après</button></div></div>
+      <div class="metro" id="metro"></div><p class="legend below" id="m-legend"></p>
+      ${foldsHtml()}
+    </div>`;
+    drawMetro();
+  };
+  const renderHop = s => {
+    const h = s.hop, line = lineOf(s.repo);
+    const i = stops.indexOf(s), prev = stops[i - 1];
+    const xfer = isXfer(i);
+    return `
+      <div class="panel hop" style="--c:${line[0]};--cf:${line[1]}">
+        <div class="num">${s.n}</div>
+        <h1 class="${s.name.length > 16 ? "long" : ""}">${breakName(s.name)}${h.layer ? ` <span class="layer">(${esc(h.layer)})</span>` : ""}</h1>
+        <div class="via">Ligne ${esc(s.repo)}${xfer ? ` · correspondance depuis ${esc(prev.repo)}` : ""}</div>
+        <p>${fmt(h.simple)}</p>
+        ${actions(stops.indexOf(s))}
+        <div class="tech clamp" id="tech">${fmt(h.tech)}${h.cite ? ` <span class="cite">· ${esc(h.cite)}</span>` : ""}</div>
+        <button type="button" class="more-tech" id="more-tech" hidden>Voir tout l'appel</button>
+      </div>
+      <div class="view">
+        <div class="pic" id="pic"></div>
+        ${h.caption ? `<p class="caption">${fmt(h.caption)}</p>` : ""}
+        ${h.plan ? `<div class="change"><b>Ce qui change ici</b>${fmt(h.plan)}</div>` : h.changed ? "" : `<p class="caption">Rien ne change à cette station.</p>`}
+      </div>`;
+  };
+  const trapItem = t => `<li>${icon("warn")}<div><b>${fmt(t.title)}${t.inference ? `<span class="tag">inférence</span>` : ""}</b>${fmt(t.text)}${t.cite ? `<div class="cite">${esc(t.cite)}</div>` : ""}</div></li>`;
+  // Blocking traps lead and stay open; once some are blocking, the rest fold under one line.
+  const trapsHtml = () => {
+    const traps = d.traps || [];
+    if (!traps.length) return "";
+    const top = traps.filter(t => t.blocking), rest = traps.filter(t => !t.blocking);
+    if (!top.length) return `<h2>Attention</h2><ul class="signs">${traps.map(trapItem).join("")}</ul>`;
+    return `<h2>Attention : ${top.length === 1 ? "le piège qui bloque" : `les ${top.length} pièges qui bloquent`}</h2><ul class="signs blocking">${top.map(trapItem).join("")}</ul>`
+      + (rest.length ? `<details class="fold"><summary>Autres pièges (${rest.length})</summary><ul class="signs">${rest.map(trapItem).join("")}</ul></details>` : "");
+  };
+  const renderEnd = () => `
+      <div class="panel dark" style="--c:var(--sign);--cf:var(--sign-fg)">
+        <h1>Avant de coder</h1>
+        <div class="via">Terminus</div>
+        <p>Les pièges du trajet et les questions ouvertes.</p>
+        ${actions(stops.length - 1)}
+      </div>
+      <div class="view">
+        ${trapsHtml()}
+        ${(d.questions || []).length ? `<h2>${KINDS[d.kind] && d.kind !== "ticket" ? "Questions ouvertes" : "Ce que le ticket ne dit pas"}</h2><ol class="open">${d.questions.map(q => `<li>${fmt(q)}</li>`).join("")}</ol>` : ""}
+        ${(d.glossary || []).length ? `<h2>Lexique</h2><dl class="lexique">${d.glossary.map(g => `<div><dt><button type="button" class="term" data-term="${esc(g.id)}">${esc(g.term)}</button></dt><dd>${esc(g.def)}</dd></div>`).join("")}</dl>` : ""}
+      </div>`;
+
+  const renderQuai = s => {
+    const q = document.getElementById("quai");
+    const h = s.kind === "hop" ? s.hop : null;
+    const reading = s.kind === "start" && (d.reading || []).length;
+    if (!(h && (h.code || h.diff)) && !reading) { q.innerHTML = ""; return; }
+    if (reading) {
+      q.innerHTML = `<div class="quai-in"><div class="quai-head"><h2>Les fichiers à ouvrir, dans l'ordre</h2></div><ol class="reading">${d.reading.map(r => `<li><div><a href="${esc(ghUrl(r.repo, r.path, r.line))}">${esc(r.repo)}/${esc(r.path)}${r.line ? ":" + r.line : ""}</a><span>${fmt(r.why)}</span></div></li>`).join("")}</ol></div>`;
+      return;
+    }
+    q.hidden = !quaiOpen;
+    q.innerHTML = `<div class="quai-in"><div class="quai-head"><h2>Sur le quai : le code de ${esc(s.name)}</h2></div>${h.code ? codeBlock(h.code) : ""}${h.diff ? diffBlock(h.diff, h.code ? h.code.path : "") : ""}</div>`;
+  };
+
+  // The flag centres on its station, but never past the strip's edge (Départ and Terminus sit at the ends).
+  const placeFlag = i => {
+    const cur = document.querySelector(`.stop[data-i="${i}"]`);
+    if (!cur) return;
+    const here = document.getElementById("here"), track = document.getElementById("track"), li = cur.parentElement, half = here.offsetWidth / 2;
+    here.style.left = Math.max(half, Math.min(track.scrollWidth - half, li.offsetLeft + li.offsetWidth / 2)) + "px";
+    if (li.offsetLeft < track.scrollLeft || li.offsetLeft + li.offsetWidth > track.scrollLeft + track.clientWidth)
+      track.scrollTo({ left: li.offsetLeft - track.clientWidth / 2 + li.offsetWidth / 2 });
+  };
+  const fitTech = () => {
+    const tech = document.getElementById("tech"), more = document.getElementById("more-tech");
+    if (tech && more && tech.classList.contains("clamp")) more.hidden = tech.scrollHeight <= tech.clientHeight + 1;
+  };
+  const renderMini = i => {
+    const s = stops[i], line = lineAt(s);
+    document.getElementById("mini").innerHTML = `<div class="mini-in pad">
+      <button type="button" data-go="${i - 1}" aria-label="Station précédente"${i === 0 ? " disabled" : ""}>${icon("prev")}</button>
+      <span class="mini-track" aria-hidden="true">${stops.map((t, k) => `<i class="${k === i ? "on" : ""}" style="--c:${lineAt(t)[0]}"></i>`).join("")}</span>
+      <span class="mini-name" style="--c:${line[0]};--cf:${line[1]}">${s.kind === "hop" ? `<b>${s.n}</b>` : ""}${breakName(s.name)}</span>
+      <button type="button" data-go="${i + 1}" aria-label="Station suivante"${i === stops.length - 1 ? " disabled" : ""}>${icon("next")}</button>
+    </div>`;
+  };
+  // `how` is how the reader moved: "push" (a click or a key, a new history entry), "pop" (Back, or a
+  // link on the plan, which already made its entry), or nothing (first paint).
+  const go = (i, focus, how) => {
+    i = Math.max(0, Math.min(stops.length - 1, i));
+    at = i; saved.at = i; persist();
+    const s = stops[i];
+    const st = document.getElementById("station");
+    st.innerHTML = s.kind === "start" ? renderStart() : s.kind === "end" ? renderEnd() : renderHop(s);
+    st.classList.toggle("start", s.kind === "start");
+    st.classList.remove("enter"); void st.offsetWidth; st.classList.add("enter");
+    document.getElementById("quai").hidden = false;
+    renderQuai(s);
+    document.querySelectorAll(".stop").forEach(b => {
+      const n = +b.dataset.i;
+      if (n === i) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
+    });
+    placeFlag(i);
+    if (s.kind === "start") renderAtlas();
+    else document.getElementById("atlas").hidden = true;
+    if (s.kind === "hop") {
+      draw(document.getElementById("pic"), s.hop.pic, lineOf(s.repo));
+      fitTech();
+    }
+    renderMini(i);
+    if (location.hash !== "#s" + i) history[how === "push" ? "pushState" : "replaceState"](null, "", "#s" + i);
+    if (how && st.getBoundingClientRect().top < parseFloat(getComputedStyle(st).scrollMarginTop)) st.scrollIntoView({ block: "start" });
+    if (focus) st.querySelector("h1")?.setAttribute("tabindex", "-1"), st.querySelector("h1")?.focus({ preventScroll: true });
+  };
+
+  document.addEventListener("click", e => {
+    const t = e.target.closest("button");
+    if (!t) return;
+    if (t.dataset.term) return openTerm(t.dataset.term);
+    if (t.dataset.lexicon !== undefined) return openLexicon();
+    if (t.dataset.ctxClose !== undefined) return closeCtx();
+    if (t.dataset.ctxStop !== undefined) { abortAsk(); return closeCtx(); }
+    if (t.dataset.dig) return sample && askClaude(t.dataset.dig, "");
+    if (t.dataset.i !== undefined) return go(+t.dataset.i, true, "push");
+    if (t.dataset.go !== undefined) return go(+t.dataset.go, true, "push");
+    if (t.dataset.metro) {
+      metroMode = t.dataset.metro;
+      document.querySelectorAll("[data-metro]").forEach(b => b.setAttribute("aria-pressed", String(b === t)));
+      return drawMetro();
+    }
+    if (t.id === "more-tech") {
+      document.getElementById("tech").classList.remove("clamp");
+      t.hidden = true;
+      return;
+    }
+    if (t.id === "toQuai") {
+      quaiOpen = !quaiOpen; saved.quai = quaiOpen; persist();
+      const q = document.getElementById("quai");
+      q.hidden = !quaiOpen;
+      t.setAttribute("aria-expanded", String(quaiOpen));
+      t.innerHTML = quaiOpen ? "Remonter du code " + icon("up") : "Descendre dans le code " + icon("down");
+      if (quaiOpen) q.scrollIntoView({ block: "start" });
+      return;
+    }
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && !ctx.hidden) return closeCtx();
+    if (e.target.closest("textarea, input") || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "ArrowRight") go(at + 1, false, "push");
+    if (e.key === "ArrowLeft") go(at - 1, false, "push");
+  });
+  // A resize only moves what depends on the width; re-rendering the station would close the reader's open folds.
+  let relayoutQueued = false;
+  window.addEventListener("resize", () => {
+    if (relayoutQueued) return;
+    relayoutQueued = true;
+    requestAnimationFrame(() => { relayoutQueued = false; placeFlag(at); fitTech(); if (stops[at].kind === "start") drawMetro(); });
+  });
+  window.addEventListener("hashchange", () => { const m = /^#s(\d+)$/.exec(location.hash); if (m && +m[1] !== at) go(+m[1], true, "pop"); });
+  // The line strip scrolls away with the page; past it, a slim copy pins to the top so the reader never loses the station.
+  // It shows as soon as any part of the strip slips under the top, not once the strip is gone.
+  document.fonts?.ready.then(fitTech);
+  const miniH = getComputedStyle(document.documentElement).getPropertyValue("--mini-h").trim();
+  new IntersectionObserver(([e]) => { document.getElementById("mini").hidden = e.intersectionRatio > 0.99; }, { rootMargin: `-${miniH} 0px 0px 0px`, threshold: [0, 0.99, 1] })
+    .observe(document.getElementById("map"));
+
+  let sample = null, ctxCtl = null, lastFocus = null;
+  if (window.claude && claude.use) claude.use("sample").then(fn => { sample = fn; }, () => {});
+  const ctx = document.getElementById("ctx"), ask = document.getElementById("ask");
+  const close = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+  const spark = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2M11 8.5v5M8.5 11h5"/></svg>';
+  const FIELDS = [["what", "C'est quoi"], ["why", "À quoi ça sert"], ["here", `Dans ${CE}`], ["example", "Exemple concret"]];
+  const SAMPLE_GONE = new Set(["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed"]);
+  const PROMPT_RULES = `N'invente rien sur ${d.project || "ce projet"} ou son code qui ne soit pas dans la page ci-dessous.
+Écris en français québécois simple, une ou deux phrases par champ, les identifiants de code entre accents graves.`;
+  const ghost = (attrs, label) => `<button type="button" class="btn ghost" ${attrs}>${label}</button>`;
+  const findTerm = text => { const t = text.trim().toLowerCase(); return (d.glossary || []).find(g => g.term.toLowerCase() === t || g.id === t); };
+  // The excerpt around the marked lines (or the first lines), enough to recognise the code without the whole range.
+  const excerpt = c => {
+    const lines = c.text.split("\n"), marks = (c.mark || []).map(m => m - (c.start || 1)).filter(m => m >= 0 && m < lines.length);
+    const from = marks.length ? Math.max(0, Math.min(...marks) - 3) : 0;
+    const to = marks.length ? Math.max(...marks) + 4 : 12;
+    return lines.slice(from, to).join("\n");
+  };
+  const hopText = s => {
+    const h = s.hop;
+    return `Station ${s.n} : ${s.name} (repo ${s.repo}${h.layer ? `, ${h.layer}` : ""}${h.changed ? ", change avec ${LE}" : ""})\n${plain(h.simple)}\n${plain(h.tech)} (${h.cite || ""})`
+      + (h.plan ? `\nCe qui change : ${plain(h.plan)}` : "") + (h.diff ? `\nDiff esquissé :\n${h.diff}` : "")
+      + (h.code ? `\nExtrait de ${h.code.path} :\n${excerpt(h.code)}` : "");
+  };
+  const whereNow = () => { const s = stops[at]; return s.kind === "hop" ? `Station ${s.n} : ${s.name}` : s.kind === "start" ? "Départ (vue d'ensemble)" : "Terminus (pièges, questions ouvertes)"; };
+  let pageCtx = null;
+  // The whole page as text, built once: the lexicon, traps and open questions come first so a cut only drops code.
+  const pageContext = () => pageCtx ??= [
+    `${SUBJECT} ${d.key || ""} : ${d.title}`, d.summary && `Résumé : ${plain(d.summary)}`,
+    ...(d.tldr || []).map(x => `En bref : ${plain(x)}`),
+    ...(d.need || []).map(n => `Besoin : ${plain(n)}`),
+    d.product && `Avant : ${(d.product.before || []).map(plain).join(" / ")}\nAprès : ${(d.product.after || []).map(plain).join(" / ")}`,
+    ...(d.glossary || []).map(g => `Lexique : ${g.term} : ${g.def}${g.here ? `. Dans ${CE} : ${g.here}` : ""}`),
+    ...(d.tickets || []).flatMap(ep => [ep, ...(ep.children || [])]).map(t => `Ticket : ${t.gap ? "(aucun ticket)" : t.key || ""} ${plain(t.title)}${t.status ? ` [${t.status}]` : ""}${(t.stations || []).length ? ` → stations ${t.stations.join(", ")}` : ""}`),
+    ...(d.traps || []).map(t => `Piège${t.blocking ? " bloquant" : ""} : ${t.title}. ${plain(t.text)}${t.cite ? ` (${t.cite})` : ""}`),
+    ...(d.questions || []).map(q => `Question ouverte : ${plain(q)}`),
+    ...stops.filter(s => s.kind === "hop").map(hopText),
+  ].filter(Boolean).join("\n\n").slice(0, 24000);
+  const shell = (title, src, ai, body, foot) => {
+    ctx.innerHTML = `<div class="ctx-head"><div class="ctx-top"><span class="ctx-label">Ça mange quoi en hiver ?</span><button type="button" class="ctx-close" data-ctx-close aria-label="Fermer">${close}</button></div><h2 id="ctx-title" tabindex="-1">${title}</h2><span class="ctx-src${ai ? " ai" : ""}">${src}</span></div><div class="ctx-body" id="ctx-body">${body}</div>${foot ? `<div class="ctx-foot">${foot}</div>` : ""}`;
+    if (ctx.hidden) lastFocus = document.activeElement;
+    ctx.hidden = false;
+    ctx.querySelector("h2").focus({ preventScroll: true });
+  };
+  const fieldsHtml = (o, fields = FIELDS) => fields.filter(([k]) => o[k]).map(([k, label]) => `<section><h3>${label}</h3><p>${fmt(String(o[k]))}</p></section>`).join("");
+  const openTerm = id => {
+    const g = terms[id];
+    if (!g) return;
+    abortAsk();
+    const o = { what: g.what || g.def, why: g.why || g.analogy, here: g.here, example: g.example };
+    const rel = (g.related || []).filter(r => terms[r]);
+    shell(g.code ? `<code style="background:transparent;border:0;color:inherit;font-size:.8em">${esc(g.term)}</code>` : esc(g.term), `Écrit pour ${CE}`, false,
+      fieldsHtml(o) + (rel.length ? `<section><h3>Voir aussi</h3><div class="ctx-rel">${rel.map(r => `<button type="button" class="term" data-term="${esc(r)}">${esc(terms[r].term)}</button>`).join("")}</div></section>` : ""),
+      sample ? ghost(`data-dig="${esc(g.term)}"`, `${spark} Creuser avec Claude`) : "");
+  };
+  const abortAsk = () => { if (ctxCtl) { ctxCtl.abort(); ctxCtl = null; } };
+  const copyFor = code => ({ not_granted: "Tu n'as pas autorisé cette page à interroger Claude.", rate_limited: "Trop de questions d'un coup : réessaie dans un moment.",
+    sampling_disabled: "Claude n'est pas disponible pour ce compte.", refused: "Claude n'a pas voulu répondre à cette sélection : essaie un mot plus précis.",
+    invalid_json: "La réponse est arrivée mal formée : réessaie.", session_expired: "Ta session a expiré : reconnecte-toi." }[code] || "La question n'a pas abouti : réessaie.");
+  // One Claude ask in the side panel: shows the thinking state, then render(o) or the error with a retry button.
+  const runSample = ({ title, src, lead, thinking, prompt, render, retry }) => {
+    abortAsk();
+    shell(title, src, true, `${lead}<div class="thinking" id="thinking"><i></i>${thinking}</div>`, ghost("data-ctx-stop", "Arrêter"));
+    const ctl = ctxCtl = new AbortController();
+    sample.json(prompt, { signal: ctl.signal, modelTier: "quick" }).then(o => {
+      if (ctl.signal.aborted || !o || typeof o !== "object") throw { code: "invalid_json" };
+      const [body, foot] = render(o);
+      document.getElementById("ctx-body").innerHTML = lead + body;
+      ctx.querySelector(".ctx-foot").innerHTML = foot;
+    }).catch(e => {
+      if (e && e.code === "cancelled") return;
+      if (e && SAMPLE_GONE.has(e.code)) sample = null;
+      const body = document.getElementById("ctx-body");
+      if (body) body.innerHTML = `<p>${esc(copyFor(e && e.code))}</p>`;
+      const foot = ctx.querySelector(".ctx-foot");
+      if (foot) foot.innerHTML = sample ? ghost(retry, "Réessayer") : "";
+    }).finally(() => { if (ctxCtl === ctl) ctxCtl = null; });
+  };
+  const askClaude = (text, quote) => {
+    const word = text.trim().slice(0, 80);
+    runSample({
+      title: esc(word), src: "Généré par Claude · vérifie dans le code", thinking: "Claude lit la page…",
+      lead: quote ? `<p class="quote">${esc(quote)}</p>` : "", retry: `data-dig="${esc(word)}"`,
+      render: o => [fieldsHtml(o), `<span class="status">Réponse générée à partir de cette page.</span>`],
+      prompt: `Tu expliques un terme à un développeur de ${d.project || "l'équipe"}${d.domain ? ` (${d.domain})` : ""} qui apprend ${CE} avant de coder.
+Garde le terme exactement comme il est écrit. Si la page ne suffit pas pour "here", dis-le simplement.
+${PROMPT_RULES}
+Réponds uniquement avec un objet JSON : {"what": "...", "why": "...", "here": "...", "example": "..."}
+- what : ce que c'est, dans son domaine (${d.domain || "le métier du projet"}, ou le code).
+- why : à quoi ça sert, pourquoi ça existe.
+- here : son rôle dans ${CE} et à l'endroit où le lecteur est.
+- example : un exemple concret et court.
+
+Terme : «${word}»
+${quote ? `Phrase où il apparaît : «${quote}»\n` : ""}Où le lecteur est : ${whereNow()}
+
+Toute la page :
+${pageContext()}`,
+    });
+  };
+  const closeCtx = () => { abortAsk(); ctx.hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true }); };
+  const openLexicon = () => {
+    abortAsk();
+    shell("Lexique", `Écrit pour ${CE}`, false,
+      `<div class="ctx-rel">${(d.glossary || []).map(g => `<button type="button" class="term" data-term="${esc(g.id)}">${esc(g.term)}</button>`).join("")}</div><p class="quote">Clique un mot pour son contexte. Ailleurs dans la page, sélectionne n'importe quel mot pour demander à Claude.</p>`, "");
+  };
+
+  let selTimer = null, selText = "", selQuote = "";
+  document.addEventListener("selectionchange", () => {
+    clearTimeout(selTimer);
+    selTimer = setTimeout(() => {
+      const sel = getSelection();
+      const text = sel && !sel.isCollapsed ? sel.toString().trim() : "";
+      const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
+      const inPage = node && node.closest("#station, #quai, #ctx-body") && !node.closest("textarea");
+      const known = text && findTerm(text);
+      if (!inPage || text.length < 2 || text.length > 80 || /\n/.test(text) || (!sample && !known)) { ask.hidden = true; return; }
+      const r = sel.getRangeAt(0).getBoundingClientRect();
+      selText = text;
+      selQuote = (node.closest("p, li, h1, .tech, td, section") || node).textContent.replace(/\s+/g, " ").trim().slice(0, 280);
+      ask.innerHTML = `${spark} Contexte`;
+      ask.hidden = false;
+      const left = Math.max(8, Math.min(r.left + window.scrollX, document.documentElement.clientWidth - ask.offsetWidth - 8));
+      ask.style.left = left + "px";
+      ask.style.top = Math.max(8, r.top + window.scrollY - ask.offsetHeight - 8) + "px";
+    }, 180);
+  });
+  ask.addEventListener("mousedown", e => e.preventDefault());
+  ask.addEventListener("click", () => {
+    ask.hidden = true;
+    const known = findTerm(selText);
+    if (known) openTerm(known.id); else if (sample) askClaude(selText, selQuote);
+  });
+
+  document.getElementById("foot").innerHTML = `<span><span class="kbd">←</span> <span class="kbd">→</span> pour changer de station</span>${d.date ? `<span>${esc(d.date)}</span>` : ""}${(d.sources || []).map(s => s.url ? `<a href="${esc(s.url)}">${esc(s.label)}</a>` : `<span>${esc(s.label)}</span>`).join("")}`;
+
+  const fromHash = /^#s(\d+)$/.exec(location.hash);
+  go(fromHash ? +fromHash[1] : Number.isInteger(saved.at) ? saved.at : 0, false);
+})();
+</script>

@@ -1,0 +1,42 @@
+{
+  "project": "widget",
+  "domain": "commandes en ligne",
+  "key": "SHOP-0",
+  "short": "fixture",
+  "url": "https://acme.atlassian.net/browse/SHOP-0",
+  "title": "Synthetic ticket that exercises every part of the page",
+  "tldr": ["The `widget-api` stops adding the {{flag}}.", "The `OrderForm` sends it instead; the biggest trap is old orders."],
+  "summary": "Today the `widget-api` adds a {{flag}} to every order. After the ticket, the author sends it explicitly.",
+  "depth": "full",
+  "date": "fixture",
+  "sources": [{"label": "fixture"}],
+  "repos": {
+    "widget-ui": {"slug": "acme/widget-ui", "sha": "0000000000000000000000000000000000000000"},
+    "widget-api": {"web": "https://gitlab.com/acme/widget-api", "host": "gitlab", "branch": "main", "sha": "1111111111111111111111111111111111111111"}
+  },
+  "glossary": [
+    {"id": "flag", "term": "flag", "code": true, "def": "a marker on an order", "what": "A marker the server sets on an order.", "why": "It lets the server own one condition.", "here": "The ticket removes it.", "example": "`{\"flag\": true}`", "related": ["order"]},
+    {"id": "order", "term": "order", "def": "a synthetic record", "what": "A record the fixture talks about.", "why": "It gives the stations something to carry.", "here": "Each station touches one.", "example": "Order 42."}
+  ],
+  "need": ["An author needs to see the {{flag}} on an {{order}}."],
+  "product": {"before": ["The flag is hidden."], "after": ["The flag is visible."]},
+  "links": [{"from": 2, "to": 3, "label": "no link yet", "missing": true, "after": "built by SHOP-2"}],
+  "tickets": [{"key": "SHOP-1", "title": "Epic that ships the widget", "status": "In Progress", "children": [
+    {"key": "SHOP-2", "title": "Story on the form", "status": "Done", "stations": [1]},
+    {"gap": true, "title": "Nobody owns the evaluation yet", "stations": [3]}]}],
+  "reading": [{"repo": "widget-api", "path": "api/flag.go", "line": 3, "why": "where the flag is added"}],
+  "flow": [
+    {"station": "OrderForm", "layer": "frontend", "simple": "The form hides the {{flag}}.", "tech": "`OrderForm`", "cite": "order-form.tsx:2", "changed": true,
+     "pic": "flowchart TB\n  O[\"order\"] --> F[\"OrderForm\"] --> H[\"flag #gt; hidden\"]\n  class F here",
+     "code": {"repo": "widget-ui", "path": "src/order-form.tsx", "start": 1, "text": "export const OrderForm = () => {\n  const visible = conditions.filter((c) => !c.flag);\n  return <Form conditions={visible} />;\n};", "mark": [2]},
+     "plan": "The filter goes away."},
+    {"station": "addFlag", "layer": "backend", "simple": "The API adds the flag.", "tech": "`addFlag`", "cite": "flag.go:3", "changed": true,
+     "pic": "flowchart TB\n  R[\"request\"] --> A[\"addFlag\"] --> D[(\"orders\")]\n  class A here",
+     "code": {"repo": "widget-api", "path": "api/flag.go", "start": 1, "text": "package api\n\nfunc addFlag(o *Order) {\n\to.Flag = true\n}", "mark": [3, 4]},
+     "diff": "  func save(o *Order) {\n- \taddFlag(o)\n  \tstore(o)\n  }"},
+    {"station": "evaluate", "layer": "backend", "repo": "widget-api", "simple": "Evaluation never reads the flag.", "tech": "`evaluate`", "cite": "eval.go:1",
+     "pic": "flowchart TB\n  D[(\"orders\")] --> E[\"evaluate\"]\n  class E here"}
+  ],
+  "traps": [{"title": "Deploy order", "text": "The UI ships first.", "cite": "fixture", "blocking": true}, {"title": "A guess", "inference": true, "text": "Marked as inference."}],
+  "questions": ["What happens to old orders?"]
+}

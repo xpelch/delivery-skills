@@ -1,0 +1,10 @@
+#!/bin/sh
+# run - start one of this folder's Python hooks with whichever Python 3 the machine has.
+#
+#   sh hooks/run <hook file>
+#
+# On Windows `python3` is often the Microsoft Store stub, which exists on the PATH but fails:
+# try it for real, and fall back to `python`. The hook's stdin (the tool call's JSON) is untouched.
+py=python3
+"$py" -c "" </dev/null >/dev/null 2>&1 || py=python
+exec "$py" "$(dirname "$0")/$1"

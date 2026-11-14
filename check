@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""check - verify the repo before sharing it. Stdlib only.
+
+  python3 check            every check
+  python3 check --quick    skip the hook test suite
+
+Checks: every JSON file parses; each SKILL.md has frontmatter with `name` equal to its folder and a
+`description` of 1024 characters or fewer without `<` or `>`; each skill a SKILL.md or README names
+exists in one of the plugins; each script an `allowed-tools` rule or a hook names exists; the
+marketplace lists every plugin folder, and each plugin's dependencies are in it; the explain fixtures
+render; the hook tests pass.
+Exit 1 after listing every failure.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+for stream in (sys.stdout, sys.stderr):  # a Windows console defaults to a code page without ✘
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+QUICK = "--quick" in sys.argv[1:]
+failures = []
+
+
+def fail(message):
+    failures.append(message)
+    print(f"  ✘ {message}")
+
+
+def files():
+    for folder, names, leaves in os.walk(ROOT):
+        names[:] = [name for name in names if name not in (".git", "__pycache__", "node_modules")]
+        for leaf in leaves:
+            yield os.path.join(folder, leaf)
+
+
+def read(path):
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def rel(path):
+    return os.path.relpath(path, ROOT).replace(os.sep, "/")
+
+
+def frontmatter(text):
+    """The top-level `key: value` pairs of a SKILL.md, folded scalars joined; None without a block."""
+    block = re.match(r"^---\r?\n(.*?)\r?\n---\r?\n", text, re.DOTALL)
+    if not block:
+        return None
+    fields, key = {}, None
+    for line in block.group(1).splitlines():
+        pair = re.match(r"^([A-Za-z][\w-]*):\s*(.*)$", line)
+        if pair:
+            key, value = pair.group(1), pair.group(2).strip()
+            fields[key] = "" if value in (">-", ">", "|", "|-") else value
+        elif key and line.startswith((" ", "\t")):
+            fields[key] = (fields[key] + " " + line.strip()).strip()
+    return fields
+
+
+def section(title):
+    print(title)
+
+
+plugins_dir = os.path.join(ROOT, "plugins")
+plugins = sorted(name for name in os.listdir(plugins_dir) if os.path.isdir(os.path.join(plugins_dir, name)))
+# skill name -> its folder, across every plugin; a name used twice would shadow itself once installed loose
+skills = {}
+for plugin in plugins:
+    folder = os.path.join(plugins_dir, plugin, "skills")
+    for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+        if os.path.isdir(os.path.join(folder, name)):
+            if name in skills:
+                fail(f"skill {name!r} is in two plugins: {rel(skills[name])} and plugins/{plugin}/skills/{name}")
+            skills[name] = os.path.join(folder, name)
+
+section("JSON files parse")
+for path in files():
+    if path.endswith(".json"):
+        try:
+            json.loads(read(path))
+        except ValueError as error:
+            fail(f"{rel(path)}: {error}")
+
+section("SKILL.md frontmatter")
+for skill, folder in skills.items():
+    path = os.path.join(folder, "SKILL.md")
+    where = rel(path)
+    if not os.path.exists(path):
+        fail(f"{rel(folder)}: no SKILL.md")
+        continue
+    fields = frontmatter(read(path))
+    if fields is None:
+        fail(f"{where}: no frontmatter")
+        continue
+    if fields.get("name") != skill:
+        fail(f"{where}: name is {fields.get('name')!r}, the folder is {skill!r}")
+    description = fields.get("description", "").strip("\"'")
+    if not description:
+        fail(f"{where}: no description")
+    if len(description) > 1024:
+        fail(f"{where}: description runs {len(description)} characters (1024 at most)")
+    if "<" in description or ">" in description:
+        fail(f"{where}: description holds < or >")
+    if ": " in description and not re.search(r"(?m)^description:\s*(>-?|\"|')", read(path)):
+        fail(f"{where}: description holds ': ' in a plain scalar; fold it (description: >-) or quote it")
+    for script in re.findall(r"\*/([\w-]+)/scripts/([\w-]+)", fields.get("allowed-tools", "")):
+        owner, name = script
+        if owner not in skills or not os.path.exists(os.path.join(skills[owner], "scripts", name)):
+            fail(f"{where}: allowed-tools names {owner}/scripts/{name}, which does not exist")
+    compatibility = fields.get("compatibility", "")
+    if len(compatibility) > 500:
+        fail(f"{where}: compatibility runs {len(compatibility)} characters (500 at most)")
+
+section("Skills named in the docs exist")
+for path in [os.path.join(ROOT, "README.md"), *(os.path.join(folder, "SKILL.md") for folder in skills.values())]:
+    if not os.path.exists(path):
+        continue
+    for name in set(re.findall(r"the `([a-z][a-z-]+)` skill", read(path))):
+        if name not in skills:
+            fail(f"{rel(path)}: names the `{name}` skill, which is in no plugin")
+
+section("Manifests")
+market = json.loads(read(os.path.join(ROOT, ".claude-plugin", "marketplace.json")))
+entries = {entry.get("name"): entry for entry in market.get("plugins", [])}
+for name in set(entries) - set(plugins):
+    fail(f"marketplace.json lists {name!r}, which has no folder under plugins/")
+for plugin in plugins:
+    manifest_path = os.path.join(plugins_dir, plugin, ".claude-plugin", "plugin.json")
+    if not os.path.exists(manifest_path):
+        fail(f"plugins/{plugin}: no .claude-plugin/plugin.json")
+        continue
+    manifest = json.loads(read(manifest_path))
+    if manifest.get("name") != plugin:
+        fail(f"plugins/{plugin}: plugin.json is named {manifest.get('name')!r}")
+    if not re.match(r"^\d+\.\d+\.\d+$", manifest.get("version", "")):
+        fail(f"plugins/{plugin}: version is {manifest.get('version')!r}; teammates only get a change when it is bumped")
+    entry = entries.get(plugin)
+    if not entry:
+        fail(f"marketplace.json does not list the {plugin!r} plugin")
+    else:
+        if entry.get("source", "").strip("./") != f"plugins/{plugin}":
+            fail(f"marketplace.json: {plugin!r} has source {entry.get('source')!r}, expected ./plugins/{plugin}")
+        if "version" in entry:
+            fail(f"marketplace.json sets a version for {plugin!r}; keep it in plugin.json only")
+    for dependency in manifest.get("dependencies", []):
+        needed = dependency if isinstance(dependency, str) else dependency.get("name", "")
+        if "@" not in needed and needed not in entries:
+            fail(f"plugins/{plugin}: depends on {needed!r}, which this marketplace does not list")
+    hooks_path = os.path.join(plugins_dir, plugin, "hooks", "hooks.json")
+    if os.path.exists(hooks_path):
+        for script in set(re.findall(r"hooks/run\\\" ([\w-]+)", read(hooks_path))) | {"run"}:
+            if not os.path.exists(os.path.join(plugins_dir, plugin, "hooks", script)):
+                fail(f"plugins/{plugin}/hooks/hooks.json starts hooks/{script}, which does not exist")
+
+section("Explain fixtures render")
+explain = skills.get("explain")
+if explain:
+    with tempfile.TemporaryDirectory() as scratch:
+        for fixture in sorted(name for name in os.listdir(os.path.join(explain, "evals")) if name.startswith("fixture")):
+            out = os.path.join(scratch, fixture + ".html")
+            run = subprocess.run([sys.executable, os.path.join(explain, "scripts", "explain-page"), "--no-fetch",
+                                  os.path.join(explain, "evals", fixture), out],
+                                 capture_output=True, text=True, encoding="utf-8")
+            if run.returncode != 0 or not os.path.exists(out):
+                fail(f"explain-page failed on {fixture}: {run.stderr.strip()[:300]}")
+            elif "%%DATA%%" in read(out) or "%%TITLE%%" in read(out):
+                fail(f"explain-page left a placeholder in {fixture}")
+
+if not QUICK:
+    section("Hook tests")
+    for path in sorted(files()):
+        if os.path.basename(path).startswith("test_") and path.endswith(".py"):
+            run = subprocess.run([sys.executable, path], capture_output=True, text=True, encoding="utf-8")
+            if run.returncode != 0:
+                fail(f"{rel(path)}: {run.stderr.strip().splitlines()[-1] if run.stderr.strip() else 'failed'}")
+
+print()
+if failures:
+    sys.exit(f"check: {len(failures)} failure(s)")
+print(f"check: all good ({len(plugins)} plugins, {len(skills)} skills)")

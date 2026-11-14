@@ -1,0 +1,49 @@
+{
+  "description": "pair guardrail: refuse a commit, push or PR that carries one of the pair skill's markers (see hooks/README.md)",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git *)",
+            "shell": "bash",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/run\" pair-marker-check",
+            "timeout": 30,
+            "statusMessage": "pair marker check"
+          },
+          {
+            "type": "command",
+            "if": "Bash(gh pr *)",
+            "shell": "bash",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/run\" pair-marker-check",
+            "timeout": 30,
+            "statusMessage": "pair marker check"
+          }
+        ]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "PowerShell(git *)",
+            "shell": "bash",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/run\" pair-marker-check",
+            "timeout": 30,
+            "statusMessage": "pair marker check"
+          },
+          {
+            "type": "command",
+            "if": "PowerShell(gh pr *)",
+            "shell": "bash",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/run\" pair-marker-check",
+            "timeout": 30,
+            "statusMessage": "pair marker check"
+          }
+        ]
+      }
+    ]
+  }
+}

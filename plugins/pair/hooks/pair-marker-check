@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""pair-marker-check - Claude Code PreToolUse hook (Bash, PowerShell): no pair-programming marker leaves the laptop.
+
+The pair skill leaves GATE markers (`GATE(` + owner + `)`) on decisions the
+user validates and owner TODO markers on pieces the user writes. The owner is `pair`, plus the value of
+$PAIR_MARKER_OWNER when the user set one (their first name, usually). Neither may land in a commit or a
+PR. The hook refuses, naming each file:line:
+- a `git commit` whose added lines hold a marker: the staged changes, plus the working-tree changes
+  and untracked files when the same command stages them first (`git add … && git commit`, `-a`);
+- a `git push` or `gh pr create` whose branch adds a marker since it left the default branch
+  (`origin/HEAD`, else `origin/main` or `origin/master`).
+Only added lines count, so a marker the branch removes, or one already on the default branch, passes.
+A plain `TODO:` or another person's `TODO(name)` passes too. Markdown files are skipped: they document
+the markers.
+
+Self-contained (stdlib only). To use it without the plugin, copy this file into a repo's
+`.claude/hooks/` and register it under PreToolUse in `.claude/settings.json` (see hooks/README.md).
+Tests: python3 hooks/test_pair_marker_check.py
+"""
+
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+
+OWNERS = sorted({"pair", os.environ.get("PAIR_MARKER_OWNER", "").strip() or "pair"})
+MARKER = re.compile(rf"\b(?:GATE|TODO)\((?:{'|'.join(map(re.escape, OWNERS))})\)")
+HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+SHELL_TOOLS = ("Bash", "PowerShell")
+
+
+def git(args, cwd):
+    try:
+        p = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=15,
+                           encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - a hook must never break the tool call
+        return None
+    return p.stdout if p.returncode == 0 else None
+
+
+def local(path):
+    """A path as this Python sees it: Git Bash on Windows writes C:\\x as /c/x."""
+    path = os.path.expanduser(path)
+    if os.name == "nt":
+        drive = re.match(r"^/([A-Za-z])(/.*)?$", path)
+        if drive:
+            return f"{drive.group(1)}:{drive.group(2) or '/'}"
+    return path
+
+
+def action(cmd, cwd):
+    """(kind, directory, stages) for the first commit, push or PR creation in the command, or None."""
+    stages = False
+    for part in re.split(r"&&|\|\||;|\n", cmd):
+        try:
+            words = shlex.split(part, posix=os.name != "nt" or "\\" not in part)
+        except ValueError:
+            words = part.split()
+        words = [word.strip("\"'") for word in words]
+        if not words:
+            continue
+        if words[0] in ("cd", "Set-Location", "sl") and len(words) > 1:
+            cwd = os.path.join(cwd, local(words[1]))
+            continue
+        name = os.path.basename(words[0]).lower().removesuffix(".exe")
+        if name == "gh" and words[1:3] == ["pr", "create"]:
+            return "range", cwd, False
+        if name != "git":
+            continue
+        gdir, index = cwd, 1
+        while index < len(words) and words[index].startswith("-"):  # git's own options come first
+            if words[index] in ("-C", "-c"):
+                if words[index] == "-C" and index + 1 < len(words):
+                    gdir = os.path.join(cwd, local(words[index + 1]))
+                index += 1
+            index += 1
+        sub = words[index] if index < len(words) else None
+        if sub == "add":
+            stages = True
+        elif sub == "push":
+            return "range", gdir, False
+        elif sub == "commit":
+            args = words[index + 1:]
+            flags = [arg for arg in args if arg.startswith("-") and not arg.startswith("--")]
+            return "commit", gdir, stages or "--all" in args or any("a" in flag[1:] for flag in flags)
+    return None
+
+
+def added_markers(diff):
+    """file:line for every added line of a unified diff (-U0) that holds a marker."""
+    found, path, line = [], None, 0
+    for text in diff.splitlines():
+        if text.startswith("+++ "):
+            path = text[6:] if text.startswith("+++ b/") and not text.endswith(".md") else None
+            continue
+        hunk = HUNK.match(text)
+        if hunk:
+            line = int(hunk.group(1))
+            continue
+        if text.startswith("+") and path:
+            if MARKER.search(text):
+                found.append(f"{path}:{line}")
+            line += 1
+    return found
+
+
+def untracked_markers(top):
+    found = []
+    for path in (git(["ls-files", "--others", "--exclude-standard"], top) or "").splitlines():
+        if path.endswith(".md"):
+            continue
+        try:
+            with open(os.path.join(top, path), encoding="utf-8", errors="ignore") as handle:
+                found += [f"{path}:{number}" for number, text in enumerate(handle, 1) if MARKER.search(text)]
+        except OSError:
+            continue
+    return found
+
+
+def default_branch(top):
+    head = (git(["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"], top) or "").strip()
+    candidates = [head] if head else []
+    for ref in [*candidates, "origin/main", "origin/master"]:
+        if git(["rev-parse", "-q", "--verify", ref], top):
+            return ref
+    return None
+
+
+def markers(kind, top, stages):
+    if kind == "commit":
+        found = added_markers(git(["diff", "--cached", "-U0", "--no-color"], top) or "")
+        if stages:
+            found += added_markers(git(["diff", "-U0", "--no-color"], top) or "")
+            found += untracked_markers(top)
+        return sorted(set(found))
+    base = default_branch(top)
+    if not base:
+        return []
+    return sorted(set(added_markers(git(["diff", "-U0", "--no-color", f"{base}...HEAD"], top) or "")))
+
+
+def main():
+    try:
+        data = json.load(sys.stdin)
+    except Exception:  # noqa: BLE001
+        return
+    cmd = (data.get("tool_input") or {}).get("command") or ""
+    if data.get("tool_name") not in SHELL_TOOLS or not re.search(r"\b(?:commit|push|create)\b", cmd):
+        return
+    found_action = action(cmd, data.get("cwd") or os.getcwd())
+    if not found_action:
+        return
+    kind, directory, stages = found_action
+    top = (git(["rev-parse", "--show-toplevel"], directory) or "").strip()
+    if not top:
+        return
+    found = markers(kind, top, stages)
+    if not found:
+        return
+    what = "this commit adds" if kind == "commit" else "this branch adds"
+    names = "/".join(f"GATE({owner})/TODO({owner})" for owner in OWNERS)
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": (
+            f"[pair markers] {what} {names} markers: {', '.join(found)}. "
+            "They are pair-programming checkpoints and never leave the laptop: resolve each one with the user "
+            "(validated → delete the marker, remark → act on it), then try again."),
+    }}))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,224 @@
+{
+  "skill_name": "explain",
+  "note": "Evals 1-5 and 7 run in a project whose .agents/project.json is profiles/example.json (Jira project SHOP, repos shop-api and shop-web); evals 6 and 8-12 run in a repo with no profile.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "full-ticket",
+      "prompt": "explique-moi SHOP-431 avant qu'on code",
+      "expected_output": "Announces the full depth; reads the ticket and its comments; traces the current flow in shop-web and shop-api with file:line per hop on each repo's default branch; publishes a page from assets/explain.html with its Départ (TLDR, then the trip map drawn from the stations, Avant and Après), its stations each with its layer, and its Terminus; then opens every station file in the editor (from the ticket worktree) in trip order with one message of one line per station, then asks the user to say 1 or 2 key points back (« redis-le-moi »), skippable, with no questions on the page",
+      "files": [],
+      "assertions": [
+        "The explain skill is used",
+        "Reads .agents/project.json before investigating",
+        "States the chosen depth in one line before explaining",
+        "Every hop of the current flow cites a file:line",
+        "Code excerpts come from the default branch on origin, not the local checkout",
+        "Identifiers stay verbatim (no renamed or translated function, field or service names)",
+        "Each term is glossed once, at first use",
+        "Builds the page with scripts/explain-page",
+        "Page is a métro trip: Départ with the trip map (one lane per repo, links on segments that are not a direct call), one station per flow hop named after its real identifier with its own pic and its layer, and a Terminus with traps and open questions",
+        "Opens every station's file with the editor CLI from a worktree inside the workspace, in trip order, and sends one message with one line per station",
+        "No Edit or Write on a repo file",
+        "Ends with a « redis-le-moi » of 1 or 2 open prompts aimed at the delta or a blocking trap, and says « passe » skips it",
+        "The page data holds no gate questions"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "light-ticket",
+      "prompt": "explique-moi SHOP-387, c'est juste un tooltip je pense",
+      "expected_output": "Announces the light depth; Départ, the stations that change and the Terminus; one « redis-le-moi » prompt",
+      "files": [],
+      "assertions": [
+        "Announces the léger depth with its reason",
+        "Has no station for a hop that does not change",
+        "One « redis-le-moi » prompt, skippable"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "no-editor",
+      "prompt": "(the profile sets \"editor\": \"none\") explique-moi SHOP-431",
+      "expected_output": "Explains as usual, then sends the walk as one message with one line per station, each path:line as a link, and runs no editor command",
+      "files": [],
+      "assertions": [
+        "Runs no code or cursor command",
+        "The walk message has one line per station with a path:line link"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "express-bump",
+      "prompt": "explique-moi SHOP-402 (bump d'une librairie de 4.12.0 à 4.12.1 dans shop-web, rien d'autre)",
+      "expected_output": "Picks express in one line with its reason; reads the ticket and the changed dependency line with its changelog; answers with a 2-3 bullet TLDR in the chat, each bullet with a file:line; no page, no walk, no subagent; then records the Compréhension section",
+      "files": [],
+      "assertions": [
+        "States the express depth and why in one line",
+        "Gives a TLDR of 2 or 3 bullets with a file:line",
+        "Publishes no page",
+        "No « redis-le-moi »",
+        "Writes the ## Compréhension section from the TLDR"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "initiative",
+      "prompt": "explique-moi SHOP-100, c'est une initiative",
+      "expected_output": "Full depth; reads the initiative, its epics and their stories one level at a time; the trip is the end-to-end journey the children deliver; the page pins each child ticket on the stations it touches and shows the uncovered hops as gaps",
+      "files": [],
+      "assertions": [
+        "Reads the children one level down at a time",
+        "Page data has tickets with stations, and gap children where no ticket covers a hop",
+        "Marks with links the segments that are not a direct call"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "no-profile",
+      "prompt": "explique-moi https://github.com/acme/shop/issues/42 avant que je code",
+      "expected_output": "Finds no .agents/project.json; reads the issue with gh issue view --comments; takes the repos root from the current repo's parent and each repo's default branch from origin/HEAD; asks once for the domain; offers to save the profile; then explains as usual",
+      "files": [],
+      "assertions": [
+        "Looks for .agents/project.json before investigating",
+        "Reads the issue and its comments with gh",
+        "Asks for missing profile fields in one message, not one by one",
+        "Offers to save .agents/project.json",
+        "Never assumes Jira or a master branch"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "called-from-delivery",
+      "prompt": "(delivery's Understand phase on SHOP-431, Situate's repo table already given)",
+      "expected_output": "Skips the page: the TLDR, the traps (blocking first) and the open questions go in the chat, then the walk in the editor; the page is built only if the user asks",
+      "files": [],
+      "assertions": [
+        "Publishes no page unless asked",
+        "Gives the TLDR, traps and open questions in the chat",
+        "Walks the stations in the editor"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "module-no-key",
+      "prompt": "explique-moi ce module : hooks/",
+      "expected_output": "Says the subject is a module and reads it on HEAD, naming the branch; asks for no ticket key and no profile; explains what the module is for, its entry points, who calls it, what it calls and its main path, each hop with a file:line; walks the files in the current checkout with no worktree; ends with a « redis-le-moi »; records the notes under a slug",
+      "files": [],
+      "assertions": [
+        "Asks for no ticket key, tracker or profile",
+        "Says which branch HEAD is before explaining",
+        "Names the entry points, the callers and what the module calls, each with a file:line",
+        "Creates no worktree",
+        "The page data, when built, has kind module, source.ref HEAD and no key"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "flow-on-head",
+      "prompt": "c'est quoi le flow quand on soumet une commande ?",
+      "expected_output": "Says the subject is a flow; traces the current flow end to end on HEAD with a file:line per hop; nothing is marked as changing; the page has no avant/après",
+      "files": [],
+      "assertions": [
+        "Every hop cites a file:line",
+        "No station is marked as changed",
+        "The page data has kind flow and no product"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "pull-request",
+      "prompt": "explique-moi la PR 42 avant que je la review",
+      "expected_output": "Reads the PR with gh pr view and gh pr diff, and the ticket it names; explains the flow before and what the diff changes at each hop; the stations that change are marked",
+      "files": [],
+      "assertions": [
+        "Reads the diff with gh pr diff",
+        "Marks the stations the diff changes",
+        "The page data has kind diff"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "say-it-back-gap",
+      "prompt": "(after the « redis-le-moi » on the fee floor) 1. le plancher s'applique dans total(), après avoir ajouté le frais",
+      "expected_output": "Confirms what is right in one line, corrects only the gap (the floor is applied in fee_for, before total adds it) in two or three lines with the hop's file:line, and does not repeat the whole explanation",
+      "files": [],
+      "assertions": [
+        "Corrects only the point that was wrong",
+        "Cites the hop's file:line",
+        "Two or three lines, not the explanation again",
+        "At most one more prompt on the same point"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "say-it-back-skip",
+      "prompt": "(after the « redis-le-moi ») passe",
+      "expected_output": "Notes the skip in the Compréhension section and moves on with no further question",
+      "files": [],
+      "assertions": [
+        "Asks nothing more",
+        "Records that the « redis-le-moi » was skipped"
+      ]
+    },
+    {
+      "id": 13,
+      "name": "known-zone-folds",
+      "prompt": "(the learner notes mark `hooks/pair-marker-check` solide, dated last week, no commit on it since) explique-moi ce module : hooks/",
+      "expected_output": "Reads the learner notes before picking the depth; checks with git log that the zone has not moved; says in one line what it skips and how to get the full explanation; folds the known stations into one line each with no gloss, and spends the explanation on what the notes do not cover",
+      "files": [],
+      "assertions": [
+        "Reads the learner notes before explaining",
+        "Runs git log --since on the zone marked solide",
+        "Says in one line what is skipped and that « reprends tout » brings it back",
+        "Does not re-explain the zone marked solide"
+      ]
+    },
+    {
+      "id": 14,
+      "name": "recurring-gap-leads",
+      "prompt": "(the learner notes hold a recurring gap: confuses the branch diff with the working tree) explique-moi ce que le hook regarde sur un push",
+      "expected_output": "Leads with the point the gap is about, and aims the « redis-le-moi » at it",
+      "files": [],
+      "assertions": [
+        "The explanation opens on the branch diff versus the working tree",
+        "The « redis-le-moi » prompt is on that point"
+      ]
+    },
+    {
+      "id": 15,
+      "name": "stale-zone",
+      "prompt": "(the learner notes mark `pricing/fees.py` solide two months ago; six commits touched it since) explique-moi pricing/fees.py",
+      "expected_output": "Says the zone moved since the notes (how many commits), treats it as vu, and explains it rather than folding it",
+      "files": [],
+      "assertions": [
+        "Says how many commits touched the zone since the date in the notes",
+        "Explains the zone instead of folding it"
+      ]
+    },
+    {
+      "id": 16,
+      "name": "notes-after-say-it-back",
+      "prompt": "(after a « redis-le-moi » on hooks/: point 1 right, point 2 corrected)",
+      "expected_output": "Updates ~/.agents/learner/<project>.md: the zone with its level, today's date and one line of evidence, the gap under Écarts récurrents; observed facts only; says where the file is when it creates it",
+      "files": [],
+      "assertions": [
+        "Writes or updates one line for the zone, with a level, a date and the evidence",
+        "Records the gap that was corrected",
+        "Writes no judgement of the person",
+        "Says where the file is the first time it is created"
+      ]
+    },
+    {
+      "id": 17,
+      "name": "user-says-known",
+      "prompt": "(mid-explanation of the checkout flow) le panier ça je connais",
+      "expected_output": "Stops explaining the cart, records it as solide with the user's word as evidence, and carries on with the rest",
+      "files": [],
+      "assertions": [
+        "Stops explaining that zone",
+        "Records it as solide, with the user's word as the evidence"
+      ]
+    }
+  ]
+}

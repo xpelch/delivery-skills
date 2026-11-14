@@ -1,0 +1,10 @@
+{
+  "name": "pair",
+  "version": "3.1.0",
+  "description": "Understand code before you change it, then build the change with Claude step by step. explain traces a ticket, a flow, a module or a diff and has you say the key points back; pair lays the job out, stops where a decision is yours and lets you write the pieces you choose; review-standards explains what is wrong with a change and why it matters; debrief keeps what the session taught. One hook keeps pair markers out of commits. Needs no ticket, tracker or setup.",
+  "author": { "name": "Xavier Pelchat", "url": "https://github.com/xpelch" },
+  "homepage": "https://github.com/xpelch/delivery-skills",
+  "repository": "https://github.com/xpelch/delivery-skills",
+  "license": "MIT",
+  "keywords": ["pair-programming", "explain", "understanding", "learning", "code-review", "workflow"]
+}

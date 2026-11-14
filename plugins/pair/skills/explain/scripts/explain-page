@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""explain-page - fill the explain page template with one explanation's data.
+
+  explain-page [--no-fetch] <data.json> <out.html>
+
+The JSON shape is in references/page.md. A flow hop's `code` names a range,
+{repo, path, start, end, mark?}. `repo` is a folder under the repos root: the
+data's `source.root`, else $EXPLAIN_SRC, else the current directory. For each
+repo the script fetches its default branch (origin/HEAD, else main, else
+master), reads the ranges from that fresh branch, pins its SHA, and takes the
+host and owner/name from the origin remote so the code links open on GitHub,
+GitLab or Bitbucket. A failed fetch stops the build: a stale branch explains
+code that is no longer there. --no-fetch skips the fetch (offline, or the
+fixture) and the date line then says the copy was not fetched.
+With `source.ref` (HEAD, a branch, a commit), the ranges are read from that
+local ref instead and nothing is fetched: the page explains the code the user
+has checked out, and a repo without an origin remote works too.
+Prints the output path. Stdlib only.
+"""
+
+import datetime
+import html
+import json
+import os
+import re
+import subprocess
+import sys
+
+args = sys.argv[1:]
+fetch = "--no-fetch" not in args
+args = [a for a in args if a != "--no-fetch"]
+if len(args) != 2:
+    sys.exit(__doc__.strip())
+
+data_path, out_path = args
+with open(data_path, encoding="utf-8") as f:
+    data = json.load(f)
+
+src_root = os.path.expanduser((data.get("source") or {}).get("root") or os.environ.get("EXPLAIN_SRC") or os.getcwd())
+local_ref = (data.get("source") or {}).get("ref")
+
+
+def git(repo, *args, timeout=None):
+    return subprocess.run(["git", "-C", os.path.join(src_root, repo), *args],
+                          capture_output=True, text=True, check=True, timeout=timeout).stdout
+
+
+def default_branch(repo):
+    """origin's default branch: what origin/HEAD points to, else main, else master."""
+    try:
+        return git(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").strip().split("/", 1)[1]
+    except subprocess.CalledProcessError:
+        for name in ("main", "master"):
+            if subprocess.run(["git", "-C", os.path.join(src_root, repo), "rev-parse", "--verify", "-q", f"origin/{name}"],
+                              capture_output=True).returncode == 0:
+                return name
+    sys.exit(f"explain-page: {repo} has no origin/HEAD, origin/main or origin/master; run `git -C {repo} remote set-head origin -a`")
+
+
+def web_home(repo):
+    """The repo's web home and host kind, read from the origin remote (ssh or https)."""
+    try:
+        url = git(repo, "remote", "get-url", "origin").strip()
+    except subprocess.CalledProcessError:  # a local repo with no origin: the page shows no code link
+        return {"web": "", "host": ""}
+    m = re.match(r"^(?:\w+://)?(?:[^@/]+@)?([^:/]+)(?::\d+)?[:/](.+?)(?:\.git)?/?$", url)
+    if not m or re.match(r"^(?:file:|[/.\\]|[A-Za-z]:[/\\])", url):  # a path on disk has no web home
+        return {"web": "", "host": ""}
+    host, path = m.group(1), m.group(2)
+    kind = "gitlab" if "gitlab" in host else "bitbucket" if "bitbucket" in host else "github"
+    return {"web": f"https://{host}/{path}", "host": kind}
+
+
+def pin(repo):
+    if repo in repos:
+        return
+    if local_ref:
+        try:
+            sha = git(repo, "rev-parse", "--verify", f"{local_ref}^{{commit}}").strip()
+        except subprocess.CalledProcessError:
+            sys.exit(f"explain-page: {repo} has no ref {local_ref!r} (source.ref)")
+        repos[repo] = {"branch": local_ref, "sha": sha, **web_home(repo)}
+        return
+    branch = default_branch(repo)
+    if fetch:
+        try:
+            git(repo, "fetch", "-q", "origin", branch, timeout=60)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            sys.exit(f"explain-page: git fetch origin {branch} failed in {repo}: {(e.stderr or '').strip()}\n"
+                     "Fix the access, or pass --no-fetch (offline).")
+    repos[repo] = {"branch": branch, "sha": git(repo, "rev-parse", f"origin/{branch}").strip(), **web_home(repo)}
+
+
+# The reading budgets keep Départ a map and the Terminus a short list, not a document (references/page.md).
+SUMMARY_WORDS = 60
+NEED_WORDS = 120
+TRAP_WORDS = 50
+UNMARKED_TRAPS = 4
+BLOCKING_TRAPS = 3
+LINK_LABEL_CHARS = 26
+KINDS = ("ticket", "flow", "module", "diff")
+LAYERS = ("frontend", "gateway", "backend", "data")
+
+
+def warn(msg):
+    print(f"explain-page: {msg}", file=sys.stderr)
+
+
+def words(*texts):
+    return sum(len(str(t).split()) for t in texts)
+
+
+# a fetching build pins fresh SHAs; only an offline build may reuse the ones the data already carries
+if data.get("depth", "full") not in ("full", "léger"):
+    sys.exit(f"explain-page: depth {data.get('depth')!r} has no page (express answers in the chat)")
+if data.get("kind", "ticket") not in KINDS:
+    warn(f"kind is {data.get('kind')!r}; set one of {', '.join(KINDS)} (the page reads as a ticket otherwise)")
+if not 2 <= len(data.get("tldr") or []) <= 3:
+    warn("tldr should hold 2 or 3 bullets; Départ shows none without it")
+stations = len(data.get("flow", []))
+
+
+def in_trip(n):
+    return isinstance(n, int) and 1 <= n <= stations
+
+
+if data.get("gate"):
+    warn("gate is no longer read: understanding is checked by the grilling, not by questions on the page")
+for epic in data.get("tickets", []):
+    for t in [epic, *epic.get("children", [])]:
+        bad = [s for s in t.get("stations", []) if not in_trip(s)]
+        if bad:
+            sys.exit(f"explain-page: ticket {t.get('key') or t.get('title')} points to station {bad[0]}, outside 1..{stations}")
+# a link marks a segment of the trip map that is not a direct call: it joins two consecutive stations
+for link in data.get("links", []):
+    a, b = link.get("from"), link.get("to")
+    if not (in_trip(a) and in_trip(b) and b == a + 1):
+        sys.exit(f"explain-page: link {a}->{b} must join two consecutive stations in 1..{stations}")
+    for field in ("label", "after"):
+        if len(link.get(field) or "") > LINK_LABEL_CHARS:
+            warn(f"link {a}->{b} {field} « {link[field]} » runs past {LINK_LABEL_CHARS} characters; it sits on the map beside a station")
+for n, hop in enumerate(data.get("flow", []), 1):
+    if not hop.get("pic"):
+        warn(f"station {n} has no pic; its picture stays empty")
+    if hop.get("layer") not in LAYERS:
+        warn(f"station {n} layer is {hop.get('layer')!r}; set one of {', '.join(LAYERS)}, shown beside its name")
+if data.get("diagrams"):
+    warn("diagrams is no longer read: the trip map comes from the flow, and each station draws its own pic")
+
+summary_words, need_words = words(data.get("summary", "")), words(*data.get("need", []))
+if summary_words > SUMMARY_WORDS:
+    warn(f"summary runs {summary_words} words; keep it to {SUMMARY_WORDS} (today versus after, nothing else)")
+if need_words > NEED_WORDS:
+    warn(f"need runs {need_words} words; keep it to {NEED_WORDS} (it folds under « Le besoin »)")
+traps = data.get("traps", [])
+blocking = [t for t in traps if t.get("blocking")]
+if len(traps) > UNMARKED_TRAPS and not blocking:
+    warn(f"{len(traps)} traps and none blocking; mark the 1 to {BLOCKING_TRAPS} that block with \"blocking\": true so the rest fold")
+if len(blocking) > BLOCKING_TRAPS:
+    warn(f"{len(blocking)} blocking traps; at most {BLOCKING_TRAPS} lead the Terminus")
+for t in traps:
+    trap_words = words(t.get("text", ""))
+    if trap_words > TRAP_WORDS:
+        warn(f"trap « {t.get('title')} » runs {trap_words} words; keep it to {TRAP_WORDS}")
+
+repos = {} if fetch else dict(data.get("repos", {}))
+for hop in data.get("flow", []):
+    code = hop.get("code")
+    if not code or "text" in code:
+        continue
+    repo = code["repo"]
+    pin(repo)
+    lines = git(repo, "show", f"{repos[repo]['sha']}:{code['path']}").split("\n")
+    code["text"] = "\n".join(lines[code["start"] - 1 : code["end"]])
+for item in data.get("reading", []):
+    pin(item["repo"])
+
+if repos:
+    data["repos"] = repos
+    pins = " · ".join(f"{name}@{r.get('branch', '')}:{r['sha'][:7]}" for name, r in repos.items())
+    fresh = "" if fetch and not local_ref else " · copie locale, pas de fetch"
+    data.setdefault("date", f"code au {datetime.date.today():%Y-%m-%d} · {pins}{fresh}")
+
+template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "explain.html")
+with open(template_path, encoding="utf-8") as f:
+    page = f.read()
+
+title = f"{data['key']} {data.get('short', '')}".strip() if data.get("key") else data.get("short", data["title"])
+payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+page = page.replace("%%TITLE%%", html.escape(title)).replace("%%DATA%%", payload)
+
+with open(out_path, "w", encoding="utf-8") as f:
+    f.write(page)
+print(out_path)

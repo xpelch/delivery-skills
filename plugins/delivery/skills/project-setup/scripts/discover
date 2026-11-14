@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""discover - gather what a project profile can be filled from, without asking anyone.
+
+  discover [--root <folder>] [--gh]
+
+Looks at the repos under --root (default: the parent of the current git repo, or
+the current folder when it holds repos), and prints one JSON object on stdout:
+
+  repos     each repo's remote, host, owner/name, default branch, PR template and
+            the test / lint / run commands its Makefile, package.json, justfile,
+            Taskfile or pyproject declares
+  keys      ticket keys seen in recent branch names and commit subjects, most
+            frequent first, which name the tracker's project key
+  branches  the branch-name shapes in use (feat/KEY-1/slug, KEY-1-slug...)
+  tools     which of git, gh, python3, node, docker are on the PATH, and whether gh
+            is signed in
+  profile   any .agents/project.json (or .claude/project.json) found above the folders
+
+With --gh, also reads each GitHub repo's merge settings and the logins of its
+recent reviewers (needs gh signed in; network). Stdlib only, read-only.
+"""
+
+import collections
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+KEY = re.compile(r"\b([A-Z][A-Z0-9]{1,9})-(\d+)\b")
+COMMAND_WORDS = {"test": ("test", "tests", "check"), "lint": ("lint", "fmt", "format", "vet"), "run": ("dev", "start", "run", "serve", "up")}
+
+
+def run(*cmd, cwd=None):
+    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    return p.stdout.strip() if p.returncode == 0 else ""
+
+
+def is_repo(path):
+    return os.path.isdir(os.path.join(path, ".git")) or os.path.isfile(os.path.join(path, ".git"))
+
+
+def find_root(arg):
+    if arg:
+        return os.path.abspath(os.path.expanduser(arg))
+    top = run("git", "rev-parse", "--show-toplevel")
+    if top:
+        return os.path.dirname(top)
+    return os.getcwd()
+
+
+def remote(repo):
+    url = run("git", "remote", "get-url", "origin", cwd=repo)
+    m = re.match(r"^(?:\w+://)?(?:[^@/]+@)?([^:/]+)(?::\d+)?[:/](.+?)(?:\.git)?/?$", url)
+    if not m:
+        return {"url": url}
+    host = m.group(1)
+    kind = "gitlab" if "gitlab" in host else "bitbucket" if "bitbucket" in host else "github" if "github" in host else host
+    return {"url": url, "host": kind, "slug": m.group(2)}
+
+
+def default_branch(repo):
+    head = run("git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD", cwd=repo)
+    if head:
+        return head.split("/", 1)[1]
+    for name in ("main", "master", "develop"):
+        if run("git", "rev-parse", "--verify", "-q", f"origin/{name}", cwd=repo):
+            return name
+    return ""
+
+
+def pr_template(repo):
+    for rel in (".github/PULL_REQUEST_TEMPLATE.md", ".github/pull_request_template.md", "docs/pull_request_template.md",
+                "PULL_REQUEST_TEMPLATE.md", ".gitlab/merge_request_templates"):
+        if os.path.exists(os.path.join(repo, rel)):
+            return rel
+    return ""
+
+
+def commands(repo):
+    found = collections.defaultdict(list)
+    pkg = os.path.join(repo, "package.json")
+    if os.path.isfile(pkg):
+        try:
+            scripts = json.load(open(pkg, encoding="utf-8")).get("scripts", {})
+        except (OSError, ValueError):
+            scripts = {}
+        runner = "pnpm" if os.path.exists(os.path.join(repo, "pnpm-lock.yaml")) else "yarn" if os.path.exists(os.path.join(repo, "yarn.lock")) else "npm run"
+        for name in scripts:
+            for kind, words in COMMAND_WORDS.items():
+                if name.split(":")[0] in words:
+                    found[kind].append(f"{runner} {name}")
+    for makefile, tool in (("Makefile", "make"), ("justfile", "just"), ("Taskfile.yml", "task")):
+        path = os.path.join(repo, makefile)
+        if os.path.isfile(path):
+            for target in re.findall(r"^([A-Za-z][\w-]*):", open(path, encoding="utf-8", errors="ignore").read(), re.M):
+                for kind, words in COMMAND_WORDS.items():
+                    if target.split("-")[0] in words:
+                        found[kind].append(f"{tool} {target}")
+    if os.path.isfile(os.path.join(repo, "go.mod")):
+        found["test"].append("go test ./...")
+    if os.path.isfile(os.path.join(repo, "pyproject.toml")):
+        found["test"].append("pytest")
+    if any(os.path.isfile(os.path.join(repo, f)) for f in ("docker-compose.yml", "compose.yml", "docker-compose.yaml")):
+        found["run"].append("docker compose up -d")
+    return {k: sorted(set(v)) for k, v in found.items()}
+
+
+def recent_names(repo):
+    branches = run("git", "for-each-ref", "--sort=-committerdate", "--count=60", "--format=%(refname:short)", "refs/remotes/origin", "refs/heads", cwd=repo).splitlines()
+    subjects = run("git", "log", "--all", "-200", "--format=%s", cwd=repo).splitlines()
+    return branches, subjects
+
+
+def branch_shape(name):
+    name = name.split("/", 1)[1] if name.startswith("origin/") else name
+    return KEY.sub("{KEY}", re.sub(r"(?<=[/-])[a-z0-9]+(?:-[a-z0-9]+)+$", "{slug}", name))
+
+
+def gh_facts(slug):
+    settings = run("gh", "repo", "view", slug, "--json", "mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,defaultBranchRef")
+    reviewers = run("gh", "pr", "list", "--repo", slug, "--state", "merged", "--limit", "30", "--json", "reviews",
+                    "--jq", "[.[].reviews[].author.login] | group_by(.) | map({login: .[0], reviews: length}) | sort_by(-.reviews) | .[:8]")
+    out = {}
+    try:
+        out["merge"] = json.loads(settings) if settings else {}
+        out["reviewers"] = json.loads(reviewers) if reviewers else []
+    except ValueError:
+        pass
+    return out
+
+
+def find_profile(start):
+    path = start
+    while True:
+        for folder in (".agents", ".claude"):
+            candidate = os.path.join(path, folder, "project.json")
+            if os.path.isfile(candidate):
+                return candidate
+        parent = os.path.dirname(path)
+        if parent == path:
+            return ""
+        path = parent
+
+
+def main():
+    args = sys.argv[1:]
+    use_gh = "--gh" in args
+    root = find_root(args[args.index("--root") + 1] if "--root" in args else None)
+    candidates = [root] if is_repo(root) else [os.path.join(root, d) for d in sorted(os.listdir(root)) if is_repo(os.path.join(root, d))]
+
+    repos, keys, shapes = {}, collections.Counter(), collections.Counter()
+    for repo in candidates:
+        info = {"path": repo, **remote(repo), "default_branch": default_branch(repo), "pr_template": pr_template(repo), "commands": commands(repo)}
+        branches, subjects = recent_names(repo)
+        for text in branches + subjects:
+            for k, _ in KEY.findall(text):
+                keys[k] += 1
+        for b in branches:
+            if KEY.search(b):
+                shapes[branch_shape(b)] += 1
+        if use_gh and info.get("host") == "github" and info.get("slug"):
+            info.update(gh_facts(info["slug"]))
+        repos[os.path.basename(repo)] = info
+
+    tools = {t: bool(shutil.which(t)) for t in ("git", "gh", "python3", "node", "docker")}
+    if tools["gh"]:
+        tools["gh_signed_in"] = subprocess.run(["gh", "auth", "status"], capture_output=True).returncode == 0
+
+    print(json.dumps({
+        "root": root,
+        "repos": repos,
+        "keys": [{"key": k, "seen": n} for k, n in keys.most_common(5)],
+        "branches": [{"shape": s, "seen": n} for s, n in shapes.most_common(3)],
+        "tools": tools,
+        "profile": find_profile(root if not is_repo(root) else os.path.join(root, ".")),
+    }, ensure_ascii=False, indent=2))
+
+
+main()

@@ -1,0 +1,165 @@
+{
+  "skill_name": "pair",
+  "note": "Evals 1-5 and 7-13 run in a repo with no .agents/project.json and no tracker; eval 6 runs inside delivery on the profile of profiles/example.json.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "goal-to-overview",
+      "prompt": "on code ça ensemble : ajoute une fonction slugify dans utils avec ses tests",
+      "expected_output": "Says back in one line what will be true when done and how it is checked; gives the work overview (numbered steps, the decision in each, which ones stop, the end-to-end check); writes PLAN-<slug>.md outside the repo; waits for the go before any code; asks for no ticket, tracker or profile",
+      "files": [],
+      "assertions": [
+        "The pair skill is used",
+        "Writes no repo code before the overview gate",
+        "Marks the steps that stop (a decision or a user-written piece)",
+        "Writes the plan file outside the repo, or asks once where the plans folder is",
+        "Asks for no ticket key, tracker or project profile"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "default-branch",
+      "prompt": "(on the repo's default branch) pair avec moi sur le renommage du module billing",
+      "expected_output": "Creates a working branch before the first edit and says so; never commits on the default branch",
+      "files": [],
+      "assertions": [
+        "Creates and switches to a working branch before editing",
+        "Says which branch it created"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "plumbing-chains-stop-stops",
+      "prompt": "(overview agreed: steps 1 and 2 plumbing, step 3 a stop) go",
+      "expected_output": "Writes, tests and commits steps 1 and 2 without stopping, ticks them in the plan; writes step 3 with its GATE marker, runs its tests, leaves it uncommitted, opens the marker in the editor, explains in 2 to 4 points and ends with a stop block of three lines at most",
+      "files": [],
+      "assertions": [
+        "Commits plumbing steps without stopping",
+        "Leaves the stop step uncommitted",
+        "Explains the step first in 2 to 4 points, each with what was done, where (file:line) and why",
+        "Ends with a stop block of at most three lines: step n/N and tests, each marker's file:line and decision, the expected answer"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "ok-deletes-markers",
+      "prompt": "(stop step 3 written with a GATE marker, left uncommitted) ok",
+      "expected_output": "Deletes the marker itself, runs the tests, commits the step, ticks it, and chains to the next step",
+      "files": [],
+      "assertions": [
+        "Deletes the marker itself on « ok »",
+        "Never commits a file holding a GATE or TODO pair marker",
+        "Commits the step and ticks it in the plan"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "remark-as-edit",
+      "prompt": "(stop step 3 uncommitted; the user edited the function in the editor and wrote) j'ai changé l'arrondi, regarde",
+      "expected_output": "Reads git diff to pick up the user's edit, applies what it implies, runs the tests, and stops again only if the edit changed a decision",
+      "files": [],
+      "assertions": [
+        "Reads git diff before answering",
+        "Runs the tests after the user's edit",
+        "Does not overwrite the user's edit"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "called-from-delivery",
+      "prompt": "(delivery on SHOP-708, Decide done, decisions comment posted) go, on code",
+      "expected_output": "Delivery hands over to pair: the overview groups steps by PR and repo with the decision each one holds, the plan is PLAN-SHOP-708.md, the steps run in the ticket's worktrees, and Pre-QA's test data ids go in the ticket's notes file",
+      "files": [],
+      "assertions": [
+        "Names the plan after the ticket key",
+        "Works in the ticket's worktrees, not the main checkouts",
+        "Hands back to delivery's Review and PR when done"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "take-a-step",
+      "prompt": "(overview agreed, step 2 done, step 3 not started) à moi pour la 3",
+      "expected_output": "Writes what surrounds the piece, its signature with a TODO pair marker and a red test, runs the tests to show it red, leaves everything uncommitted, marks the step ✍ in the plan, says what the piece must do without saying how, and ends with the « à toi » block",
+      "files": [],
+      "assertions": [
+        "Does not write the body of the piece",
+        "Leaves a signature with a TODO pair marker and a red test",
+        "Marks the step ✍ in the plan file",
+        "Ends with the « à toi » block: step n/N, the TODO's file:line and what to write, the three answers"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "graded-hint",
+      "prompt": "(step 3 is the user's, TODO marker in place) indice",
+      "expected_output": "Gives the smallest hint that unblocks: where to look, with a file:line; no approach and no code until asked again",
+      "files": [],
+      "assertions": [
+        "The first hint names where to look, with a file:line",
+        "Gives no code on the first ask",
+        "Writes nothing in the user's file"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "review-the-users-code",
+      "prompt": "(step 3 is the user's; they wrote the body, one edge case is missed) fait",
+      "expected_output": "Reads git diff, runs the tests, says what the tests say first, then at most three remarks each with a file:line and what it costs; changes nothing in the user's code; stops on a remark that blocks, otherwise deletes the marker, commits and ticks",
+      "files": [],
+      "assertions": [
+        "Reads git diff and runs the tests before answering",
+        "At most three remarks, each with a file:line and what it costs",
+        "Does not edit the user's code without being asked",
+        "Commits only once the marker is gone"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "hand-back",
+      "prompt": "(step 3 is the user's, TODO marker in place, body not written) prends-la",
+      "expected_output": "Writes the body itself, turns the step into a stop step with a GATE marker on what it chose, and ends with the usual stop block",
+      "files": [],
+      "assertions": [
+        "Writes the body and replaces the TODO marker with a GATE marker on its choice",
+        "Leaves the step uncommitted and ends with the stop block"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "unplanned-stop",
+      "prompt": "(overview agreed on the assumption that settings.FEE_FLOOR is one number; a teammate's commit made it a per-currency table) go",
+      "expected_output": "Stops where the assumption breaks, commits nothing of the step, and says in four lines at most: the step, what was assumed, what was found with its file:line, the options with a recommendation; updates the plan on the answer before carrying on",
+      "files": [],
+      "assertions": [
+        "Does not pick an option silently",
+        "Names what the plan assumed and what the code holds, with a file:line",
+        "Offers options with a recommendation",
+        "Updates the plan file once the user answers"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "preference-proposed",
+      "prompt": "(the learner notes say the user writes the tests themselves) on code ça ensemble : ajoute la remise par volume",
+      "expected_output": "Reads the learner notes before the overview; proposes ✍ on the test steps and says why; the user still agrees or moves the marks at the gate",
+      "files": [],
+      "assertions": [
+        "Reads the learner notes before the overview",
+        "Marks the test steps ✍ and says it comes from the notes",
+        "Still asks the user to agree on who writes what"
+      ]
+    },
+    {
+      "id": 13,
+      "name": "notes-after-the-job",
+      "prompt": "(the job is done; the user wrote `fee_for` and its review had no blocking remark)",
+      "expected_output": "Updates the learner notes before the closing message: the zone becomes solide with the date and the fact that the user wrote it and it passed review",
+      "files": [],
+      "assertions": [
+        "Marks the zone solide with the date and the evidence",
+        "Writes no judgement of the person"
+      ]
+    }
+  ]
+}

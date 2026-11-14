@@ -1,0 +1,80 @@
+{
+  "project": "shop",
+  "domain": "boutique en ligne pour artisans",
+  "language": "fr",
+  "repos_root": "~/src/github.com/acme",
+  "editor": "code",
+  "worktree": "../{repo}-{key}",
+  "tracker": {
+    "kind": "jira",
+    "site": "acme.atlassian.net",
+    "key": "SHOP",
+    "statuses": {
+      "start": "In Progress",
+      "review": "In Review",
+      "done": "In QA"
+    },
+    "reference_tickets": [
+      "SHOP-120",
+      "SHOP-214"
+    ]
+  },
+  "branch": "feat/{KEY}/{slug}",
+  "commit": "{type}({KEY}): {description}",
+  "commands": {
+    "test": "make test (shop-api) · npm test (shop-web)",
+    "lint": "make lint (shop-api) · npm run lint (shop-web)",
+    "run": "docker compose up -d, then http://localhost:3000"
+  },
+  "pr": {
+    "title": "{type}({KEY}): {description}",
+    "reviewers": {
+      "Sam": "sam-acme",
+      "Alex": "alex-acme"
+    },
+    "reply_voice": "English, short and plain, one or two lines"
+  },
+  "review": {
+    "comment_language": "en",
+    "voice": "lowercase, one or two short sentences, questions not prescriptions",
+    "taste": [
+      "one rule in one place, never duplicated",
+      "a named helper over an inline block repeated twice",
+      "no comment that restates the code"
+    ],
+    "rules": [
+      "~/src/github.com/acme/shop-docs/engineering/rules"
+    ]
+  },
+  "announce": {
+    "chat": "slack",
+    "channel": "dev-shop",
+    "channel_id": "",
+    "header": ":pr-open:",
+    "language": "fr"
+  },
+  "deliver": {
+    "merge": "squash merge through the GitHub merge queue",
+    "no_merge_days": [
+      "friday"
+    ],
+    "rollout": [
+      "Feature flag exists in every environment before the merge",
+      "Per-shop configuration created with its value for each shop",
+      "Migration reviewed before it reaches the shared staging database"
+    ],
+    "release": "deploy the merged commit to qa from the CI pipeline, then move the ticket to In QA",
+    "notes": "staging is shared between teams: book it in #dev-shop before deploying a branch there."
+  },
+  "glossary": "~/src/github.com/acme/shop-docs/glossary.json",
+  "glossary_check": "",
+  "pr_diff": "",
+  "skills": {
+    "payments and refunds": "shop-payments",
+    "the app as a whole": "shop-stack"
+  },
+  "traps": [
+    "Each shop has its own settings row: a change reaches every shop unless a setting guards it.",
+    "The mobile app ships every two weeks: an API field it reads cannot be renamed in one release."
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "delivery-skills",
+  "description": "Understand code and pair-program with Claude (the pair plugin), and carry a ticket from start to QA on top of it (the delivery plugin).",
+  "owner": { "name": "Xavier Pelchat", "url": "https://github.com/xpelch" },
+  "plugins": [
+    {
+      "name": "pair",
+      "source": "./plugins/pair",
+      "description": "Understand code before you change it, then build the change step by step with Claude: the explain, pair, review-standards and debrief skills, and a pair-marker guardrail hook."
+    },
+    {
+      "name": "delivery",
+      "source": "./plugins/delivery",
+      "description": "Ticket-to-QA delivery workflow for any project, on top of the pair plugin: seven skills configured by .agents/project.json."
+    }
+  ]
+}

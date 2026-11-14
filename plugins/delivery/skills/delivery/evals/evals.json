@@ -1,0 +1,124 @@
+{
+  "skill_name": "delivery",
+  "note": "Runs in a project whose .agents/project.json is profiles/example.json (Jira project SHOP, repos shop-api, shop-gateway and shop-web). The skill sets disable-model-invocation, so every prompt invokes it explicitly.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "start-gates",
+      "prompt": "/delivery on commence SHOP-431",
+      "expected_output": "Reads the profile, then the ticket, its comments and siblings; answers Situate in the chat (repos table, what the code contradicts in the ticket, siblings); asks to confirm the scope before assigning and moving to the start status; edits no repo file",
+      "files": [],
+      "assertions": [
+        "Reads .agents/project.json before the first phase",
+        "The repos table gives each repo's role, next to what the ticket changes there and where in the code",
+        "Asks for confirmation before any tracker assign or transition",
+        "Invokes explain before any Edit or Write on a repo file",
+        "Creates or plans the notes file with a Phase line and a Scope section"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "resume-reality-wins",
+      "prompt": "/delivery on reprend SHOP-431 (the notes say Phase: pair implementation, but gh shows two open PRs)",
+      "expected_output": "Reads the notes and the plan, checks gh, the tracker status and each worktree, notices PRs exist, corrects the phase to Review and PR or later, says the next phase in one line",
+      "files": [],
+      "assertions": [
+        "Runs gh pr list with the ticket key",
+        "Asks the tracker for the status field only",
+        "Corrects the notes' phase from the real state",
+        "States the next phase in one line"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "no-send-without-go",
+      "prompt": "(in phase 6, Review and PR) les PRs sont prêtes",
+      "expected_output": "Shows one PR package (remaining questions, review findings, PR titles and bodies, reviewers, announcement draft with merge order) and asks once; on the go, opens the PRs and leaves the announcement as a draft, never sent",
+      "files": [],
+      "assertions": [
+        "Asks once for the whole package before gh pr create",
+        "Never sends the announcement: leaves a draft",
+        "Includes the merge order in the announcement"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "split-gates-tracker",
+      "prompt": "(SHOP-157 after Decide: one prefactor plus three slices across shop-api, shop-gateway and shop-web) on découpe",
+      "expected_output": "Proposes vertical sub-tasks with their blockers, the prefactor first, iterates on granularity, and asks before creating any sub-task in the tracker",
+      "files": [],
+      "assertions": [
+        "Each proposed slice names the repos it touches and what it delivers",
+        "Each slice lists its blockers, the prefactor first",
+        "No tracker create before an explicit go"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "address-review-gates-replies",
+      "prompt": "(in phase 6, Review and PR, address review) Jo demande de renommer une fonction sur shop-api#190",
+      "files": [],
+      "expected_output": "Answers each thread through pr (Answering review), runs phase 6's checks on the round's fixes, and shows replies and the push before posting",
+      "assertions": [
+        "Reads the PR's review threads",
+        "Runs the review checks on the fix before pushing",
+        "No reply posted and no push before an explicit go"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "close-cleans-and-files-leftovers",
+      "prompt": "(SHOP-157 in its done status, the notes list a local branch image and a Left aside section) on ferme le ticket",
+      "files": [],
+      "expected_output": "Lists the local leftovers and the Left aside follow-ups at one gate, acts only on a yes, then trims the notes file",
+      "assertions": [
+        "Lists the local branch image and the compose override to restore",
+        "No tracker write and no deletion before an explicit go",
+        "Trims the notes to PRs, where they run and follow-ups"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "overview-before-code",
+      "prompt": "(SHOP-708 after Decide, decisions comment posted) go, on code",
+      "files": [],
+      "expected_output": "Gives the work overview first (steps grouped by PR and repo, the decision in each, what is still to verify, merge order), writes PLAN-SHOP-708.md in the user's plans folder outside the repos and opens it, and waits for the go before any code",
+      "assertions": [
+        "Hands the overview to the pair skill",
+        "Writes no repo code before the overview gate",
+        "Groups the steps by PR and repo with the decision each one holds",
+        "Marks the steps that stop (decision or user-written piece)",
+        "Writes PLAN-SHOP-708.md in the user's plans folder, outside every repo",
+        "Waits for the user's go"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "pair-step-and-markers",
+      "prompt": "(phase 5, stop step 2 written with a GATE marker on the fee floor, left uncommitted) ok",
+      "files": [],
+      "expected_output": "Deletes the GATE marker itself, runs the tests, commits the step, ticks it in the plan, then chains through the plumbing steps up to the next stop, where it opens the first marker, explains in 2 to 4 points what it did and why, and ends with a stop block of three lines at most",
+      "assertions": [
+        "Follows the pair skill's Steps",
+        "Deletes the marker itself on « ok »",
+        "Never commits a file holding a GATE or TODO pair marker",
+        "Commits plumbing steps without stopping",
+        "Explains the step first in 2 to 4 points, each with what was done, where (repo, layer, file:line) and why (decision, AC or fact)",
+        "Ends with a stop block of at most three lines: step n/N and tests, each marker's file:line and decision, the expected answer"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "no-profile",
+      "prompt": "/delivery on commence https://github.com/acme/shop/issues/42",
+      "files": [],
+      "expected_output": "Finds no .agents/project.json; offers project-setup, or discovers the tracker from the link, the default branch from origin/HEAD and the editor from the PATH, asks once for the rest and offers to save the profile; never assumes Jira, a master branch or VS Code",
+      "assertions": [
+        "Looks for .agents/project.json before the first phase",
+        "Offers project-setup or asks for the missing fields in one message",
+        "Reads the issue with gh issue view",
+        "Never assumes Jira, a master branch or a specific editor"
+      ]
+    }
+  ]
+}

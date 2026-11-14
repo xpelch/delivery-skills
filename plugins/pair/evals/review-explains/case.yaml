@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: review-explains
+tags: [read-only, review]
+context:
+  scaffold_script: fixture.sh

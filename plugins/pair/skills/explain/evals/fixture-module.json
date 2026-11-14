@@ -1,0 +1,96 @@
+{
+  "kind": "module",
+  "project": "widget",
+  "short": "fixture module",
+  "title": "Synthetic module that exercises a page with no ticket",
+  "tldr": [
+    "`OrderForm` is the only entry point of the module.",
+    "The biggest trap: nothing checks the {{flag}} twice."
+  ],
+  "summary": "The module turns a filled form into one order sent to `widget-api`.",
+  "depth": "léger",
+  "date": "fixture",
+  "sources": [
+    {
+      "label": "fixture"
+    }
+  ],
+  "repos": {
+    "widget-ui": {
+      "slug": "acme/widget-ui",
+      "sha": "0000000000000000000000000000000000000000"
+    },
+    "widget-api": {
+      "web": "https://gitlab.com/acme/widget-api",
+      "host": "gitlab",
+      "branch": "main",
+      "sha": "1111111111111111111111111111111111111111"
+    }
+  },
+  "glossary": [
+    {
+      "id": "flag",
+      "term": "flag",
+      "code": true,
+      "def": "a marker on an order",
+      "what": "A marker the server sets on an order.",
+      "why": "It lets the server own one condition.",
+      "here": "The ticket removes it.",
+      "example": "`{\"flag\": true}`",
+      "related": [
+        "order"
+      ]
+    }
+  ],
+  "need": [
+    "Every screen that creates an order goes through it."
+  ],
+  "flow": [
+    {
+      "station": "OrderForm",
+      "layer": "frontend",
+      "simple": "The form hides the {{flag}}.",
+      "tech": "`OrderForm`",
+      "cite": "order-form.tsx:2",
+      "pic": "flowchart TB\n  O[\"order\"] --> F[\"OrderForm\"] --> H[\"flag #gt; hidden\"]\n  class F here",
+      "code": {
+        "repo": "widget-ui",
+        "path": "src/order-form.tsx",
+        "start": 1,
+        "text": "export const OrderForm = () => {\n  const visible = conditions.filter((c) => !c.flag);\n  return <Form conditions={visible} />;\n};",
+        "mark": [
+          2
+        ]
+      }
+    },
+    {
+      "station": "addFlag",
+      "layer": "backend",
+      "simple": "The API adds the flag.",
+      "tech": "`addFlag`",
+      "cite": "flag.go:3",
+      "pic": "flowchart TB\n  R[\"request\"] --> A[\"addFlag\"] --> D[(\"orders\")]\n  class A here",
+      "code": {
+        "repo": "widget-api",
+        "path": "api/flag.go",
+        "start": 1,
+        "text": "package api\n\nfunc addFlag(o *Order) {\n\to.Flag = true\n}",
+        "mark": [
+          3,
+          4
+        ]
+      }
+    }
+  ],
+  "traps": [
+    {
+      "title": "Deploy order",
+      "text": "The UI ships first.",
+      "cite": "fixture",
+      "blocking": true
+    }
+  ],
+  "questions": [
+    "What happens when the form is submitted twice?"
+  ]
+}

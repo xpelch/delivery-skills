@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""pr-anchor - find where an inline review comment can land in a pull request's diff.
+
+  pr-anchor <owner/repo> <pr-number> <path> <line | L<line> | /regex/>
+
+A review comment must sit on a line of the PR's diff, or the whole review call
+fails. Give a line of the new file (`42`), a line of the base file (`L42`, a
+removed line), or a regex matched against the diff's lines (added and context
+first, removed after). Prints `<path> <side> <line>  <the line's text>` for the
+first match, the `side` and `line` a review comment takes (RIGHT = new file,
+LEFT = removed line), and exits 1 when the target is not in the diff. Re-run it
+right before posting: an author's force-push moves lines. Needs gh signed in.
+Stdlib only.
+"""
+
+import json
+import re
+import subprocess
+import sys
+
+HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+if len(sys.argv) != 5:
+    sys.exit(__doc__.strip())
+repo, number, path, target = sys.argv[1:]
+
+out = subprocess.run(["gh", "api", "--paginate", f"repos/{repo}/pulls/{number}/files",
+                      "--jq", ".[] | {filename, patch}"], capture_output=True, text=True)
+if out.returncode:
+    sys.exit(f"pr-anchor: gh api failed: {out.stderr.strip()}")
+files = [json.loads(line) for line in out.stdout.splitlines() if line.strip()]
+patch = next((f.get("patch") for f in files if f["filename"] == path), None)
+if patch is None:
+    sys.exit(f"pr-anchor: {path} is not in {repo}#{number}'s diff")
+if not patch:
+    sys.exit(f"pr-anchor: {path} has no text diff (binary or too large); comment on the PR body instead")
+
+lines = []  # (side, line, text, kind)
+old = new = 0
+for raw in patch.split("\n"):
+    m = HUNK.match(raw)
+    if m:
+        old, new = int(m.group(1)), int(m.group(2))
+        continue
+    if raw.startswith("-"):
+        lines.append(("LEFT", old, raw[1:], "removed"))
+        old += 1
+    elif raw.startswith("+"):
+        lines.append(("RIGHT", new, raw[1:], "added"))
+        new += 1
+    elif raw.startswith(" ") or raw == "":
+        lines.append(("RIGHT", new, raw[1:], "context"))
+        old += 1
+        new += 1
+
+if target.startswith("/") and target.endswith("/") and len(target) > 2:
+    rx = re.compile(target[1:-1])
+    match = next((l for kind in ("added", "context", "removed") for l in lines if l[3] == kind and rx.search(l[2])), None)
+elif target.upper().startswith("L") and target[1:].isdigit():
+    match = next((l for l in lines if l[0] == "LEFT" and l[1] == int(target[1:])), None)
+elif target.isdigit():
+    match = next((l for l in lines if l[0] == "RIGHT" and l[1] == int(target)), None)
+else:
+    sys.exit("pr-anchor: the target is a line number, L<number> for a removed line, or /regex/")
+
+if not match:
+    print(f"pr-anchor: {target} is not on a line of {path}'s diff", file=sys.stderr)
+    sys.exit(1)
+print(f"{path} {match[0]} {match[1]}  {match[2].strip()}")

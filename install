@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# install - copy the skills where Claude Code and Codex look for them.
+#
+# Claude Code users: prefer the plugins (README, "Install"); they also bring the hook and the updates.
+# This script is for Codex, for other agents that read Agent Skills, and for skills without a plugin.
+#
+#   ./install                 every skill, for every agent found on this machine (Claude Code, Codex)
+#   ./install --core          only the core: explain and pair
+#   ./install --claude        Claude Code only   -> ~/.claude/skills/
+#   ./install --codex         Codex only         -> ~/.agents/skills/
+#   ./install --project DIR   one repo instead   -> DIR/.claude/skills/ and DIR/.agents/skills/
+#   ./install --force         replace skills of the same name (default: keep them and say so)
+#   ./install --dry-run       print what would be copied, copy nothing
+#
+# On Windows, run it from Git Bash: bash install
+set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+want_claude=0 want_codex=0 project="" force=0 dry=0 core=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --core) core=1 ;;
+    --claude) want_claude=1 ;;
+    --codex) want_codex=1 ;;
+    --project) project="${2:?--project needs a folder}"; shift ;;
+    --force) force=1 ;;
+    --dry-run) dry=1 ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    *) echo "install: unknown option $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+if [ "$want_claude" -eq 0 ] && [ "$want_codex" -eq 0 ]; then
+  { [ -d "$HOME/.claude" ] || command -v claude >/dev/null 2>&1; } && want_claude=1
+  { [ -d "$HOME/.codex" ] || [ -d "$HOME/.agents" ] || command -v codex >/dev/null 2>&1; } && want_codex=1
+  if [ "$want_claude" -eq 0 ] && [ "$want_codex" -eq 0 ]; then want_claude=1; want_codex=1; fi
+fi
+
+targets=()
+if [ -n "$project" ]; then
+  [ "$want_claude" -eq 1 ] && targets+=("$project/.claude/skills")
+  [ "$want_codex" -eq 1 ] && targets+=("$project/.agents/skills")
+else
+  [ "$want_claude" -eq 1 ] && targets+=("$HOME/.claude/skills")
+  [ "$want_codex" -eq 1 ] && targets+=("$HOME/.agents/skills")
+fi
+
+if [ "$core" -eq 1 ]; then sources=("$here"/plugins/pair/skills/*/); else sources=("$here"/plugins/*/skills/*/); fi
+
+for target in "${targets[@]}"; do
+  echo "-> $target"
+  [ "$dry" -eq 1 ] || mkdir -p "$target"
+  for skill in "${sources[@]}"; do
+    name="$(basename "$skill")"
+    if [ -e "$target/$name" ] && [ "$force" -eq 0 ]; then
+      echo "   kept    $name (already there; --force replaces it)"
+      continue
+    fi
+    if [ "$dry" -eq 1 ]; then
+      echo "   would copy $name"
+    else
+      rm -rf "${target:?}/$name"
+      cp -R "$skill" "$target/$name"
+      chmod +x "$target/$name"/scripts/* 2>/dev/null || true
+      echo "   copied  $name"
+    fi
+  done
+done
+
+echo
+echo "Next: ask the agent to explain a piece of code, or to pair on a change; neither needs any setup."
+if [ "$core" -eq 0 ]; then
+  echo "For the ticket workflow, ask it to set the project up first (project-setup writes .agents/project.json)."
+fi
+echo "Restart Claude Code or Codex if it was running, so it lists the new skills."
+echo "The pair-marker hook is not copied by this script: it comes with the pair plugin, or see plugins/pair/hooks/README.md."

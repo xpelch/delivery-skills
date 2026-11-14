@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.DS_Store
+# written by each `claude plugin eval` run
+plugins/*/evals/results/

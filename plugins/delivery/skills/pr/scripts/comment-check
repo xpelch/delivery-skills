@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""comment-check - list the code comments a branch adds, so only the useful ones ship.
+
+  comment-check [<base>] [--strict] [--repo <path>]
+
+Reads `git diff <base>...HEAD` (default base: origin's default branch) in the
+repo (default: the current folder) and prints every added line that is, or ends
+with, a comment, as `path:line: text`. A comment worth keeping says a
+non-obvious why or a trap; one that restates the code goes. --strict exits 1
+when any comment is listed, so the script can guard a git hook or a CI step.
+Generated files, lockfiles and vendored code are skipped. Stdlib only.
+"""
+
+import os
+import re
+import subprocess
+import sys
+
+MARKERS = {
+    "//": (".go", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".java", ".kt", ".kts", ".swift", ".c", ".h", ".cc", ".cpp",
+           ".hpp", ".cs", ".rs", ".scala", ".dart", ".php", ".proto", ".scss", ".less"),
+    "#": (".py", ".rb", ".sh", ".bash", ".zsh", ".yml", ".yaml", ".toml", ".tf", ".r", ".pl", ".ex", ".exs", ".dockerfile"),
+    "--": (".sql", ".lua", ".hs", ".elm"),
+}
+BLOCK = re.compile(r"^\s*(/\*|\*(?!/)|\*/|<!--|\{/\*)")
+SKIP = re.compile(r"(^|/)(vendor|node_modules|dist|build|generated|__generated__)/|\.lock$|-lock\.(json|yaml)$|\.min\.|\.pb\.go$|_gen\.go$|\.gen\.|\.snap$|\.golden$")
+HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def git(repo, *args):
+    p = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
+    if p.returncode:
+        sys.exit(f"comment-check: git {' '.join(args)} failed: {p.stderr.strip()}")
+    return p.stdout
+
+
+def default_base(repo):
+    head = subprocess.run(["git", "-C", repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], capture_output=True, text=True)
+    if head.returncode == 0:
+        return head.stdout.strip()
+    for name in ("origin/main", "origin/master"):
+        if subprocess.run(["git", "-C", repo, "rev-parse", "--verify", "-q", name], capture_output=True).returncode == 0:
+            return name
+    sys.exit("comment-check: no origin/HEAD, origin/main or origin/master; pass the base branch")
+
+
+def marker_for(path):
+    name = os.path.basename(path).lower()
+    ext = ".dockerfile" if name == "dockerfile" else os.path.splitext(name)[1]
+    return next((m for m, exts in MARKERS.items() if ext in exts), None)
+
+
+def comment_in(line, marker):
+    """The comment part of an added line: a whole-line comment, or a trailing one outside quotes."""
+    stripped = line.strip()
+    if BLOCK.match(line):
+        return stripped
+    if marker and stripped.startswith(marker):
+        return stripped
+    if marker:
+        in_quote = None
+        for i, ch in enumerate(line):
+            if in_quote:
+                if ch == in_quote and line[i - 1] != "\\":
+                    in_quote = None
+            elif ch in "\"'`":
+                in_quote = ch
+            elif line.startswith(marker, i) and (marker != "//" or line[i - 1:i] != ":"):
+                return line[i:].strip()
+    return None
+
+
+def main():
+    args = sys.argv[1:]
+    strict = "--strict" in args
+    repo = args[args.index("--repo") + 1] if "--repo" in args else "."
+    positional = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] != "--repo")]
+    base = positional[0] if positional else default_base(repo)
+
+    diff = git(repo, "diff", "--unified=0", "--no-color", f"{base}...HEAD")
+    found, path, line_no = [], None, 0
+    for raw in diff.split("\n"):
+        if raw.startswith("+++ "):
+            path = raw[6:] if raw.startswith("+++ b/") else None
+            continue
+        m = HUNK.match(raw)
+        if m:
+            line_no = int(m.group(1))
+            continue
+        if path and raw.startswith("+") and not SKIP.search(path):
+            text = comment_in(raw[1:], marker_for(path))
+            if text and not text.startswith(("#!", "# -*-", "//go:", "// +build", "//nolint", "# noqa", "// eslint", "/* eslint", "// @ts-")):
+                found.append(f"{path}:{line_no}: {text}")
+            line_no += 1
+
+    for item in found:
+        print(item)
+    print(f"comment-check: {len(found)} comment(s) added against {base}", file=sys.stderr)
+    sys.exit(1 if strict and found else 0)
+
+
+main()
